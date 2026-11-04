@@ -1,10 +1,12 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  serverExternalPackages: ["better-sqlite3"],
   turbopack: {
+    root: path.resolve("."),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MyInvest
 
-## Getting Started
+เว็บแอปบันทึกการลงทุน หุ้นไทย ETF หุ้นต่างประเทศ และ Crypto แทน Google Sheets ทุกอย่างคำนวณให้อัตโนมัติ ไม่ต้องเขียนสูตรเอง
 
-First, run the development server:
+## ฟีเจอร์
+
+- **Login / สมัครสมาชิก**: รหัสผ่าน hash ด้วย scrypt และ session เก็บใน SQLite (cookie httpOnly อายุ 30 วัน) ข้อมูลแยกตาม user
+- **พอร์ต & ค่าเงิน**: แยกได้หลายพอร์ต (หุ้น/ETF หรือ Crypto) และแต่ละพอร์ตกำหนดสกุลเงินเองได้ (THB, USD, …) ตอนสมัครจะสร้าง "พอร์ตหุ้น" และ "พอร์ต Crypto" ให้อัตโนมัติ
+- **หลายสกุลเงิน**: ทุกยอดในหน้าภาพรวมแปลงเป็นบาท ใช้อัตราที่ตั้งเอง หรือถ้าไม่ได้ตั้ง จะใช้อัตราเฉลี่ยจากยอดบาทที่โอนเข้าพอร์ตนั้น
+- **บัญชีผู้ใช้**: เปลี่ยนรหัสผ่าน (เมื่อเปลี่ยนแล้วอุปกรณ์อื่นจะถูก logout) และออกจากระบบอุปกรณ์อื่นทั้งหมด
+- **ธีม**: สว่าง / มืด / ตามระบบ จำค่าไว้ในเบราว์เซอร์
+- **ฝาก-ถอน**: บันทึกพร้อมบัญชีและหมายเหตุ ถ้าเป็นพอร์ตต่างประเทศ ใส่ยอดบาทที่โอนจริงได้ เพื่อให้นับกำไร/ขาดทุนจากค่าเงินด้วย
+- **ซื้อ-ขาย**: ระบุชนิดได้ทั้งหุ้น ETF และ Crypto (จำนวนทศนิยมได้) มีค่าธรรมเนียมและโบรกเกอร์/Exchange
+- **ปันผล**: ใส่จำนวนหุ้น, ปันผลต่อหุ้น, % ภาษี (ค่าเริ่มต้น 10%), วัน XD และวันจ่าย แล้วระบบคำนวณยอดรวม ภาษี และยอดสุทธิให้
+- **หลักทรัพย์ที่ถือ**: คำนวณจำนวนและต้นทุนเฉลี่ยจากประวัติซื้อขาย ใส่ราคาล่าสุดเพื่อดูกำไรที่ยังไม่ได้ขาย
+- **ภาพรวม**: มูลค่าพอร์ต, เงินต้น, กำไร/ขาดทุนรวม, เป้าหมายพร้อมยอดที่ยังขาด และสรุปรายปี
+- ทุกตารางเพิ่ม / แก้ไข / ลบได้ และกรองตามพอร์ตได้
+
+## วิธีคำนวณ
+
+| ค่า | สูตร |
+| --- | --- |
+| ต้นทุนเฉลี่ย | วิธี average cost: ค่าธรรมเนียมซื้อรวมในต้นทุน ค่าธรรมเนียมขายหักจากเงินที่ได้ |
+| กำไรที่ขายแล้ว | เงินที่ได้จากการขาย − ค่าธรรมเนียม − (ต้นทุนเฉลี่ย × จำนวนที่ขาย) |
+| ปันผลสุทธิ | จำนวนหุ้น × ปันผลต่อหุ้น × (1 − ภาษี%) |
+| เงินสดคงเหลือ | ฝาก − ถอน + ปันผลสุทธิ − เงินซื้อ + เงินขาย |
+| มูลค่าพอร์ต | เงินสดคงเหลือ + มูลค่าหลักทรัพย์ (ใช้ราคาทุนถ้ายังไม่ได้ใส่ราคาล่าสุด) |
+| ปันผล % ต่อปี | ปันผลสุทธิของปี ÷ เงินต้นสะสม (ฝาก − ถอน) ณ สิ้นปี |
+| ผลตอบแทน % ต่อปี | (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นสะสม ณ สิ้นปี |
+| เงินต้น (บาท) ของพอร์ตต่างประเทศ | ยอดบาทที่โอนจริง (ถ้าไม่ได้ใส่ จะแปลงด้วยอัตราปัจจุบัน) |
+| กำไร/ขาดทุนรวม (บาท) | มูลค่าวันนี้ × อัตราปัจจุบัน − เงินต้น (บาท) ซึ่งรวมผลจากค่าเงินแล้ว |
+
+## เริ่มใช้งาน
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+เปิด http://localhost:3000 แล้วสมัครสมาชิก
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+ฐานข้อมูลอยู่ที่ `data/myinvest.db` (เปลี่ยนตำแหน่งได้ด้วย env `DATABASE_PATH`) สำรองข้อมูลได้ด้วยการ copy ไฟล์นี้ ถ้าต้องการเริ่มใหม่ให้ลบโฟลเดอร์ `data/`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## โครงสร้าง
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `lib/db.ts`: เชื่อมต่อ SQLite และ schema
+- `lib/auth.ts`: password hashing, session และ `requireUser()`
+- `lib/data.ts`: query และ mutation ทั้งหมด (scope ด้วย `user_id` ทุกตัว)
+- `lib/calc.ts`: คำนวณ holdings, กำไร และสรุปรายปี
+- `app/actions.ts`, `app/auth-actions.ts`: Server Actions
+- `app/(main)/*`: หน้าหลังจาก login
+- `app/(auth)/*`: หน้า login และสมัครสมาชิก
+- `proxy.ts`: redirect ไปหน้า login ถ้ายังไม่มี session
