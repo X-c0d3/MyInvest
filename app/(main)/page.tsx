@@ -78,6 +78,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       | "dividendsThb"
       | "realizedThb"
       | "unrealizedThb"
+      | "reinvestedThb"
+      | "dividendsOutsideThb"
       | "profitThb",
   ) => shown.reduce((s, x) => s + x[k], 0);
   const capital = sum("capitalThb");
@@ -163,17 +165,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            <span className="text-white/75">เงินต้นสุทธิ</span>
+            <span className="text-white/75">💰 เงินต้นจากกระเป๋า</span>
             <span className="text-right font-semibold tabular-nums">
               {fmt(capital)}
             </span>
-            <span className="text-white/75">เงินสดคงเหลือ</span>
+            <span className="text-white/75">เงินสดในพอร์ต</span>
             <span className="text-right font-semibold tabular-nums">
               {fmt(sum("cashThb"))}
             </span>
-            <span className="text-white/75">ปันผลสะสม</span>
+            <span className="text-white/75">🎁 ปันผลที่อยู่นอกพอร์ต</span>
             <span className="text-right font-semibold tabular-nums">
-              {fmt(sum("dividendsThb"))}
+              {fmt(sum("dividendsOutsideThb"))}
             </span>
           </div>
         </div>
@@ -182,8 +184,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           emoji="🏦"
-          label="เงินต้นสุทธิ (ฝาก − ถอน)"
+          label="เงินต้นจากกระเป๋า (เงินใหม่ − ถอน)"
           value={fmt(capital)}
+          hint={
+            sum("reinvestedThb")
+              ? `ไม่รวมกำไรที่นำกลับมาลงทุน ${fmt(sum("reinvestedThb"), 0)}`
+              : undefined
+          }
         />
         <Stat
           emoji="✅"
@@ -202,6 +209,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           emoji="🎁"
           label="ปันผลสุทธิสะสม"
           value={fmt(sum("dividendsThb"))}
+          hint={`นำกลับมาลงทุนแล้ว ${fmt(sum("dividendsThb") - sum("dividendsOutsideThb"), 0)} · ยังอยู่นอกพอร์ต ${fmt(sum("dividendsOutsideThb"), 0)}`}
         />
       </div>
 
@@ -315,7 +323,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             <thead>
               <tr>
                 <th>พอร์ต</th>
-                <th className="num">เงินต้น (฿)</th>
+                <th className="num">เงินต้นจากกระเป๋า (฿)</th>
                 <th className="num">มูลค่า (สกุลพอร์ต)</th>
                 <th className="num">มูลค่า (฿)</th>
                 <th className="num">กำไร/ขาดทุน (฿)</th>
@@ -358,22 +366,26 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             <thead>
               <tr>
                 <th>ปี</th>
-                <th className="num">ฝาก</th>
+                <th className="num">💰 เงินใหม่</th>
+                <th className="num">🔁 นำกลับ</th>
                 <th className="num">ถอน</th>
                 <th className="num">เงินเก็บสุทธิ</th>
                 <th className="num">ปันผลสุทธิ</th>
                 <th className="num">กำไรที่ขายแล้ว</th>
-                <th className="num">เงินต้นสะสม</th>
+                <th className="num">เงินต้นจากกระเป๋าสะสม</th>
                 <th className="num">ปันผล %</th>
                 <th className="num">ผลตอบแทน %</th>
               </tr>
             </thead>
             <tbody>
-              {years.length === 0 ? <EmptyRow cols={9} emoji="📅" /> : null}
+              {years.length === 0 ? <EmptyRow cols={10} emoji="📅" /> : null}
               {years.map((y) => (
                 <tr key={y.year}>
                   <td className="font-semibold">{y.year}</td>
-                  <td className="num">{fmt(y.deposit)}</td>
+                  <td className="num">{fmt(y.fresh)}</td>
+                  <td className="num text-muted">
+                    {y.deposit - y.fresh ? fmt(y.deposit - y.fresh) : "-"}
+                  </td>
                   <td className="num">
                     {y.withdraw ? `(${fmt(y.withdraw)})` : "-"}
                   </td>
@@ -400,7 +412,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           </table>
         </div>
         <p className="mt-3 text-xs text-muted">
-          💡 ผลตอบแทน % = (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นสะสม ณ สิ้นปี ·
+          💡 เงินเก็บสุทธิ = เงินใหม่ − ถอน ·
+          กำไรที่ขายแล้วรวมกำไรขายที่บันทึกย้อนหลัง · ผลตอบแทน % =
+          (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นจากกระเป๋าสะสม ณ สิ้นปี ·
           ไม่รวมกำไรที่ยังไม่ได้ขาย · สกุลเงินต่างประเทศแปลงด้วยอัตราปัจจุบัน
         </p>
       </Card>

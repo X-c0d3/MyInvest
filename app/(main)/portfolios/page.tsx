@@ -104,6 +104,19 @@ export default async function PortfoliosPage({
                 ))}
               </select>
             </Field>
+            <Field
+              label="ปันผลจ่ายไปที่"
+              hint="โบรกหุ้นไทยส่วนใหญ่โอนปันผลเข้าบัญชีธนาคาร ถ้านำกลับมาลงทุน ให้บันทึกเป็นเงินฝาก “ปันผลนำกลับ”"
+            >
+              <select
+                name="dividendsTo"
+                defaultValue={editing?.dividendsToCash ? "cash" : "bank"}
+                className="input"
+              >
+                <option value="bank">🏦 บัญชีธนาคาร (นอกพอร์ต)</option>
+                <option value="cash">💼 เงินสดในพอร์ต</option>
+              </select>
+            </Field>
             <Field label="หมายเหตุ">
               <input
                 name="note"
@@ -177,18 +190,26 @@ export default async function PortfoliosPage({
               <th>ชื่อพอร์ต</th>
               <th>ประเภท</th>
               <th>สกุลเงิน</th>
+              <th>ปันผลจ่ายไปที่</th>
               <th>หมายเหตุ</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {portfolios.length === 0 ? <EmptyRow cols={5} emoji="📂" /> : null}
+            {portfolios.length === 0 ? <EmptyRow cols={6} emoji="📂" /> : null}
             {portfolios.map((p) => (
               <tr key={p.id}>
                 <td className="font-semibold">{p.name}</td>
                 <td>{p.kind === "stock" ? "🏢 หุ้น / ETF" : "🪙 Crypto"}</td>
                 <td>
                   {CURRENCY_FLAG[p.currency]} {p.currency}
+                </td>
+                <td className="text-muted">
+                  {p.kind === "crypto"
+                    ? "-"
+                    : p.dividendsToCash
+                      ? "💼 เงินสดในพอร์ต"
+                      : "🏦 บัญชีธนาคาร"}
                 </td>
                 <td>{p.note}</td>
                 <td>

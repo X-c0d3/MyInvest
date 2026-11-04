@@ -83,6 +83,16 @@ export const cashflowThb = (c: Cashflow, fx: Fx) =>
   c.amountThb ?? c.amount * fx.rateOf(c.portfolioId);
 const signed = (c: Cashflow, n: number) => (c.type === "deposit" ? n : -n);
 
+/**
+ * How a cashflow counts:
+ *  - fresh deposit ('new') and every withdrawal move the owner's own capital (เงินต้นจากกระเป๋า);
+ *  - 'dividend' deposits are dividends paid out to the bank and moved back in: cash, not capital, not a new return;
+ *  - 'realized' deposits are back-dated sale profit: cash and a realized return, not capital.
+ * Every cashflow moves portfolio cash.
+ */
+export const isCapital = (c: Cashflow) =>
+  c.type === "withdraw" || c.source === "new";
+
 // ---- positions ----
 
 export type Holding = {
@@ -186,16 +196,25 @@ export function computePositions(trades: Trade[], prices: Price[]) {
 
 export type YearRow = {
   year: number;
+  /** All deposits (fresh + reinvested). */
   deposit: number;
+  /** Fresh money from the owner's pocket. */
+  fresh: number;
+  /** Dividends moved back in ('dividend' deposits). */
+  reinvestedDividend: number;
+  /** Back-dated sale profit recorded as deposits ('realized'). */
+  reinvestedRealized: number;
   withdraw: number;
+  /** เงินเก็บสุทธิ: fresh − withdraw (change in own capital). */
   netDeposit: number;
   dividendNet: number;
   dividendTax: number;
+  /** Realized trade P/L plus back-dated sale profit. */
   realized: number;
-  /** เงินต้นสะสม ณ สิ้นปี (ฝาก − ถอน ตั้งแต่เริ่ม) */
+  /** เงินต้นจากกระเป๋าสะสม ณ สิ้นปี */
   capital: number;
   dividendYieldPct: number;
-  /** (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นสะสม ณ สิ้นปี */
+  /** (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นจากกระเป๋าสะสม ณ สิ้นปี */
   returnPct: number;
 };
 
@@ -213,6 +232,9 @@ export function yearlySummary(
       r = {
         year,
         deposit: 0,
+        fresh: 0,
+        reinvestedDividend: 0,
+        reinvestedRealized: 0,
         withdraw: 0,
         netDeposit: 0,
         dividendNet: 0,
@@ -229,8 +251,17 @@ export function yearlySummary(
 
   for (const c of cashflows) {
     const r = row(yearOf(c.date));
-    if (c.type === "deposit") r.deposit += cashflowThb(c, fx);
-    else r.withdraw += cashflowThb(c, fx);
+    const thb = cashflowThb(c, fx);
+    if (c.type === "withdraw") {
+      r.withdraw += thb;
+      continue;
+    }
+    r.deposit += thb;
+    if (c.source === "dividend") r.reinvestedDividend += thb;
+    else if (c.source === "realized") {
+      r.reinvestedRealized += thb;
+      r.realized += thb;
+    } else r.fresh += thb;
   }
   for (const d of dividends) {
     const r = row(yearOf(d.paidDate));
@@ -244,7 +275,7 @@ export function yearlySummary(
   return [...rows.values()]
     .sort((a, b) => a.year - b.year)
     .map((r) => {
-      r.netDeposit = r.deposit - r.withdraw;
+      r.netDeposit = r.fresh - r.withdraw;
       capital += r.netDeposit;
       r.capital = capital;
       r.dividendYieldPct = capital > 0 ? (r.dividendNet / capital) * 100 : 0;
@@ -269,19 +300,27 @@ export type PortfolioSummary = {
   realized: number;
   unrealized: number;
   /** THB */
+  /** เงินต้นจากกระเป๋า: fresh deposits − withdrawals (baht actually transferred). */
   capitalThb: number;
+  /** Dividends and back-dated sale profit moved back into the portfolio. */
+  reinvestedThb: number;
+  /** Net dividends still outside the portfolio (paid to the bank and not moved back in). */
+  dividendsOutsideThb: number;
   cashThb: number;
   valueThb: number;
   dividendsThb: number;
   realizedThb: number;
   unrealizedThb: number;
-  /** มูลค่าวันนี้ (บาท) − เงินบาทที่โอนเข้าสุทธิ: รวมผลจากค่าเงินด้วย */
+  /** มูลค่าวันนี้ + ปันผลที่ยังอยู่นอกพอร์ต − เงินต้นจากกระเป๋า (รวมผลจากค่าเงินด้วย) */
   profitThb: number;
   profitPct: number;
   byAssetThb: Record<AssetType, number>;
 };
 
-/** มูลค่าพอร์ต = เงินสดคงเหลือ + มูลค่าหลักทรัพย์ (ราคาล่าสุด หรือราคาทุนถ้ายังไม่ได้ใส่ราคา) */
+/**
+ * มูลค่าพอร์ต = เงินสดคงเหลือ + มูลค่าหลักทรัพย์ (ราคาล่าสุด หรือราคาทุนถ้ายังไม่ได้ใส่ราคา).
+ * Cash includes every deposit, and dividends only when the broker credits them to the portfolio.
+ */
 export function summarizePortfolio(
   portfolio: Portfolio,
   cashflows: Cashflow[],
@@ -296,13 +335,24 @@ export function summarizePortfolio(
   const myCashflows = own(cashflows);
   const myHoldings = own(holdings);
   const rate = fx.rate(portfolio.currency);
+  const sum = (xs: Cashflow[], f: (c: Cashflow) => number) =>
+    xs.reduce((s, c) => s + signed(c, f(c)), 0);
+  const native = (c: Cashflow) => c.amount;
+  const thb = (c: Cashflow) => cashflowThb(c, fx);
 
-  const capital = myCashflows.reduce((s, c) => s + signed(c, c.amount), 0);
-  const capitalThb = myCashflows.reduce(
-    (s, c) => s + signed(c, cashflowThb(c, fx)),
-    0,
+  const capitalFlows = myCashflows.filter(isCapital);
+  const dividendBack = myCashflows.filter(
+    (c) => c.type === "deposit" && c.source === "dividend",
   );
+  const realizedBack = myCashflows.filter(
+    (c) => c.type === "deposit" && c.source === "realized",
+  );
+
+  const capital = sum(capitalFlows, native);
+  const capitalThb = sum(capitalFlows, thb);
+  const cashIn = sum(myCashflows, native);
   const divs = own(dividends).reduce((s, d) => s + dividendNet(d), 0);
+  const dividendsBack = sum(dividendBack, native);
   const tradeCash = own(trades).reduce(
     (s, t) =>
       s +
@@ -311,13 +361,16 @@ export function summarizePortfolio(
         : t.quantity * t.price - t.fee),
     0,
   );
-  const cash = capital + divs + tradeCash;
+  const cash = cashIn + (portfolio.dividendsToCash ? divs : 0) + tradeCash;
   const holdingsValue = myHoldings.reduce((s, h) => s + h.marketValue, 0);
   const costBasis = myHoldings.reduce((s, h) => s + h.costBasis, 0);
   const value = cash + holdingsValue;
-  const realizedSum = own(realized).reduce((s, r) => s + r.pnl, 0);
+  const realizedSum =
+    own(realized).reduce((s, r) => s + r.pnl, 0) + sum(realizedBack, native);
+  const dividendsOutside = portfolio.dividendsToCash ? 0 : divs - dividendsBack;
   const valueThb = value * rate;
-  const profitThb = valueThb - capitalThb;
+  const dividendsOutsideThb = dividendsOutside * rate;
+  const profitThb = valueThb + dividendsOutsideThb - capitalThb;
 
   const byAssetThb: Record<AssetType, number> = { stock: 0, etf: 0, crypto: 0 };
   for (const h of myHoldings) byAssetThb[h.assetType] += h.marketValue * rate;
@@ -334,6 +387,8 @@ export function summarizePortfolio(
     realized: realizedSum,
     unrealized: holdingsValue - costBasis,
     capitalThb,
+    reinvestedThb: sum(dividendBack, thb) + sum(realizedBack, thb),
+    dividendsOutsideThb,
     cashThb: cash * rate,
     valueThb,
     dividendsThb: divs * rate,

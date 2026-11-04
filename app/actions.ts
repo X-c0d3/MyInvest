@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import {
+  CASH_SOURCES,
   CURRENCIES,
   deleteRow,
   getPortfolio,
@@ -24,7 +25,12 @@ class ValidationError extends Error {}
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
-function num(f: FormData, k: string, label: string, { min = 0, allowZero = true } = {}) {
+function num(
+  f: FormData,
+  k: string,
+  label: string,
+  { min = 0, allowZero = true } = {},
+) {
   const raw = str(f, k).replace(/,/g, "");
   const n = raw === "" && allowZero ? 0 : Number(raw);
   if (!Number.isFinite(n) || n < min || (!allowZero && n === 0)) {
@@ -36,11 +42,16 @@ function num(f: FormData, k: string, label: string, { min = 0, allowZero = true 
 function date(f: FormData, k: string, label: string, required = true) {
   const v = str(f, k);
   if (!v && !required) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new ValidationError(`กรุณาระบุ${label}`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v))
+    throw new ValidationError(`กรุณาระบุ${label}`);
   return v;
 }
 
-function oneOf<T extends string>(f: FormData, k: string, values: readonly T[]): T {
+function oneOf<T extends string>(
+  f: FormData,
+  k: string,
+  values: readonly T[],
+): T {
   const v = str(f, k) as T;
   if (!values.includes(v)) throw new ValidationError("ข้อมูลไม่ถูกต้อง");
   return v;
@@ -58,13 +69,19 @@ function portfolioField(f: FormData, userId: number) {
 }
 
 /** Wraps a save: re-checks the session, maps validation errors to form state, then returns to the list. */
-async function handle(f: FormData, path: string, fn: (userId: number) => Promise<void> | void): Promise<FormState> {
+async function handle(
+  f: FormData,
+  path: string,
+  fn: (userId: number) => Promise<void> | void,
+): Promise<FormState> {
   const user = await requireUser();
   try {
     await fn(user.id);
   } catch (e) {
     if (e instanceof ValidationError) {
-      const values = Object.fromEntries([...f].filter(([k, v]) => typeof v === "string" && !k.startsWith("$")));
+      const values = Object.fromEntries(
+        [...f].filter(([k, v]) => typeof v === "string" && !k.startsWith("$")),
+      );
       return { error: e.message, values: values as Record<string, string> };
     }
     throw e;
@@ -81,6 +98,7 @@ export async function savePortfolioAction(_: FormState, f: FormData) {
       name,
       kind: oneOf(f, "kind", ["stock", "crypto"]),
       currency: oneOf(f, "currency", CURRENCIES),
+      dividendsToCash: oneOf(f, "dividendsTo", ["bank", "cash"]) === "cash",
       note: str(f, "note"),
     });
   });
@@ -91,12 +109,18 @@ export async function saveCashflowAction(_: FormState, f: FormData) {
     const portfolio = portfolioField(f, userId);
     const amount = num(f, "amount", "จำนวนเงิน", { allowZero: false });
     // Foreign portfolios: the baht actually paid lets FX gains show up in THB returns. Optional.
-    const amountThb = portfolio.currency === "THB" ? amount : str(f, "amountThb") ? num(f, "amountThb", "ยอดเงินบาท") : null;
+    const amountThb =
+      portfolio.currency === "THB"
+        ? amount
+        : str(f, "amountThb")
+          ? num(f, "amountThb", "ยอดเงินบาท")
+          : null;
     saveCashflow(userId, editId(f), {
       portfolioId: portfolio.id,
       type: oneOf(f, "type", ["deposit", "withdraw"]),
       amount,
       amountThb,
+      source: oneOf(f, "source", CASH_SOURCES),
       date: date(f, "date", "วันที่")!,
       account: str(f, "account"),
       note: str(f, "note"),
@@ -153,13 +177,20 @@ export async function savePriceAction(_: FormState, f: FormData) {
 export async function saveFxRateAction(_: FormState, f: FormData) {
   return handle(f, "/portfolios", (userId) => {
     const currency = oneOf(f, "currency", CURRENCIES);
-    if (currency === "THB") throw new ValidationError("ไม่ต้องตั้งอัตราของเงินบาท");
-    saveFxRate(userId, currency, num(f, "rate", "อัตราแลกเปลี่ยน", { allowZero: false }));
+    if (currency === "THB")
+      throw new ValidationError("ไม่ต้องตั้งอัตราของเงินบาท");
+    saveFxRate(
+      userId,
+      currency,
+      num(f, "rate", "อัตราแลกเปลี่ยน", { allowZero: false }),
+    );
   });
 }
 
 export async function saveGoalAction(_: FormState, f: FormData) {
-  return handle(f, "/", (userId) => setGoal(userId, num(f, "goal", "เป้าหมาย")));
+  return handle(f, "/", (userId) =>
+    setGoal(userId, num(f, "goal", "เป้าหมาย")),
+  );
 }
 
 const TABLES: Record<DeletableTable, string> = {

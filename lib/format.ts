@@ -1,4 +1,4 @@
-import type { AssetType, Portfolio } from "./data";
+import type { AssetType, CashSource, Portfolio } from "./data";
 
 const nf = (digits: number) =>
   new Intl.NumberFormat("th-TH", {
@@ -80,3 +80,25 @@ const SERIES_SLOTS = 8;
  */
 export const seriesColor = (index: number) =>
   index < SERIES_SLOTS ? `var(--series-${index + 1})` : "var(--muted)";
+
+/** Labels for where deposited money came from (see CashSource). */
+export const CASH_SOURCE_LABEL: Record<
+  CashSource,
+  { emoji: string; label: string; hint: string }
+> = {
+  new: {
+    emoji: "💰",
+    label: "เงินใหม่",
+    hint: "เงินจากกระเป๋า นับเป็นเงินต้น",
+  },
+  dividend: {
+    emoji: "🎁",
+    label: "ปันผลนำกลับ",
+    hint: "ปันผลที่โบรกโอนออก แล้วนำกลับมาลงทุน ไม่นับเป็นเงินต้น",
+  },
+  realized: {
+    emoji: "📈",
+    label: "กำไรขาย (ย้อนหลัง)",
+    hint: "กำไรขายหุ้นที่จดเป็นเงินฝากก่อนบันทึกการซื้อขาย นับเป็นกำไร ไม่นับเป็นเงินต้น",
+  },
+};

@@ -23,8 +23,24 @@ export type Portfolio = {
   name: string;
   kind: PortfolioKind;
   currency: Currency;
+  /** true: dividends are credited to portfolio cash; false: the broker pays them to a bank account. */
+  dividendsToCash: boolean;
   note: string;
 };
+
+/** Where deposited money came from. Only meaningful for deposits; withdrawals are always 'new'. */
+export type CashSource = "new" | "dividend" | "realized";
+export const CASH_SOURCES = ["new", "dividend", "realized"] as const;
+
+const PORTFOLIO_COLUMNS =
+  "id, name, kind, currency, dividends_to_cash AS dividendsToCash, note";
+type PortfolioRow = Omit<Portfolio, "dividendsToCash"> & {
+  dividendsToCash: 0 | 1;
+};
+const toPortfolio = (r: PortfolioRow): Portfolio => ({
+  ...r,
+  dividendsToCash: r.dividendsToCash === 1,
+});
 
 export type Cashflow = {
   id: number;
@@ -34,6 +50,7 @@ export type Cashflow = {
   amount: number;
   /** Baht actually transferred; equals amount for THB portfolios. */
   amountThb: number | null;
+  source: CashSource;
   date: string;
   account: string;
   note: string;
@@ -72,16 +89,18 @@ export type FxRate = { currency: string; rate: number; updatedAt: string };
 // Every query is scoped by user_id; callers get userId from requireUser().
 
 export const listPortfolios = (userId: number) =>
-  getDb()
-    .prepare(
-      "SELECT id, name, kind, currency, note FROM portfolios WHERE user_id = ? ORDER BY id",
-    )
-    .all(userId) as Portfolio[];
+  (
+    getDb()
+      .prepare(
+        `SELECT ${PORTFOLIO_COLUMNS} FROM portfolios WHERE user_id = ? ORDER BY id`,
+      )
+      .all(userId) as PortfolioRow[]
+  ).map(toPortfolio);
 
 export const listCashflows = (userId: number) =>
   getDb()
     .prepare(
-      `SELECT id, portfolio_id AS portfolioId, type, amount, amount_thb AS amountThb, date, account, note
+      `SELECT id, portfolio_id AS portfolioId, type, amount, amount_thb AS amountThb, source, date, account, note
          FROM cashflows WHERE user_id = ? ORDER BY date DESC, id DESC`,
     )
     .all(userId) as Cashflow[];
@@ -118,11 +137,12 @@ export const listFxRates = (userId: number) =>
     .all(userId) as FxRate[];
 
 export function getPortfolio(userId: number, portfolioId: number) {
-  return getDb()
+  const row = getDb()
     .prepare(
-      "SELECT id, name, kind, currency, note FROM portfolios WHERE id = ? AND user_id = ?",
+      `SELECT ${PORTFOLIO_COLUMNS} FROM portfolios WHERE id = ? AND user_id = ?`,
     )
-    .get(portfolioId, userId) as Portfolio | undefined;
+    .get(portfolioId, userId) as PortfolioRow | undefined;
+  return row ? toPortfolio(row) : undefined;
 }
 
 // ---- mutations ----
@@ -135,15 +155,30 @@ export function savePortfolio(
   if (id) {
     getDb()
       .prepare(
-        "UPDATE portfolios SET name = ?, kind = ?, currency = ?, note = ? WHERE id = ? AND user_id = ?",
+        "UPDATE portfolios SET name = ?, kind = ?, currency = ?, dividends_to_cash = ?, note = ? WHERE id = ? AND user_id = ?",
       )
-      .run(p.name, p.kind, p.currency, p.note, id, userId);
+      .run(
+        p.name,
+        p.kind,
+        p.currency,
+        p.dividendsToCash ? 1 : 0,
+        p.note,
+        id,
+        userId,
+      );
   } else {
     getDb()
       .prepare(
-        "INSERT INTO portfolios (user_id, name, kind, currency, note) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO portfolios (user_id, name, kind, currency, dividends_to_cash, note) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(userId, p.name, p.kind, p.currency, p.note);
+      .run(
+        userId,
+        p.name,
+        p.kind,
+        p.currency,
+        p.dividendsToCash ? 1 : 0,
+        p.note,
+      );
   }
 }
 
@@ -157,6 +192,7 @@ export function saveCashflow(
     c.type,
     c.amount,
     c.amountThb,
+    c.type === "deposit" ? c.source : "new",
     c.date,
     c.account,
     c.note,
@@ -164,15 +200,15 @@ export function saveCashflow(
   if (id) {
     getDb()
       .prepare(
-        `UPDATE cashflows SET portfolio_id = ?, type = ?, amount = ?, amount_thb = ?, date = ?, account = ?, note = ?
+        `UPDATE cashflows SET portfolio_id = ?, type = ?, amount = ?, amount_thb = ?, source = ?, date = ?, account = ?, note = ?
         WHERE id = ? AND user_id = ?`,
       )
       .run(...args, id, userId);
   } else {
     getDb()
       .prepare(
-        `INSERT INTO cashflows (portfolio_id, type, amount, amount_thb, date, account, note, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO cashflows (portfolio_id, type, amount, amount_thb, source, date, account, note, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(...args, userId);
   }

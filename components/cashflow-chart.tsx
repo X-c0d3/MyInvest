@@ -9,15 +9,20 @@ export type FlowSeries = {
 };
 export type FlowYear = {
   year: number;
-  /** Running net capital (THB) at year end across the shown portfolios. */
+  /** Running own capital (THB, fresh − withdrawals) at year end across the shown portfolios. */
   capital: number;
-  parts: Record<number, { deposit: number; withdraw: number }>;
+  /** Per portfolio: fresh money in, returns moved back in, and withdrawals (THB). */
+  parts: Record<number, { fresh: number; reinvest: number; withdraw: number }>;
 };
 
+/** Reinvested money is the deposit hue, lightened, so the two shades read as one "money in" bar. */
+const REINVEST_BG = "color-mix(in oklab, var(--pos) 40%, var(--surface))";
+
 /**
- * Deposits and withdrawals per year as a pair of columns on one magnitude axis.
- * Only the biggest deposit and biggest withdrawal carry a direct label; the tooltip
- * has the per-portfolio breakdown, the net, and the running capital.
+ * Money in and out per year as a pair of columns on one magnitude axis:
+ * the deposit column stacks fresh money (dark) under reinvested returns (light), next to the withdrawal column.
+ * Only the biggest deposit and biggest withdrawal carry a direct label; the tooltip has the
+ * per-portfolio breakdown, the net change in own capital, and the running capital.
  */
 export function CashflowChart({
   series,
@@ -46,18 +51,23 @@ export function CashflowChart({
     const parts = series
       .map((s) => ({
         s,
-        deposit: y?.parts[s.id]?.deposit ?? 0,
+        fresh: y?.parts[s.id]?.fresh ?? 0,
+        reinvest: y?.parts[s.id]?.reinvest ?? 0,
         withdraw: y?.parts[s.id]?.withdraw ?? 0,
       }))
-      .filter((p) => p.deposit || p.withdraw);
-    const deposit = parts.reduce((a, p) => a + p.deposit, 0);
-    const withdraw = parts.reduce((a, p) => a + p.withdraw, 0);
+      .filter((p) => p.fresh || p.reinvest || p.withdraw);
+    const total = (k: "fresh" | "reinvest" | "withdraw") =>
+      parts.reduce((a, p) => a + p[k], 0);
+    const fresh = total("fresh");
+    const reinvest = total("reinvest");
     return {
       year: first + i,
       capital: y?.capital ?? null,
       parts,
-      deposit,
-      withdraw,
+      fresh,
+      reinvest,
+      deposit: fresh + reinvest,
+      withdraw: total("withdraw"),
     };
   });
 
@@ -72,18 +82,12 @@ export function CashflowChart({
   const biggestOut = cols.reduce((a, b) => (b.withdraw > a.withdraw ? b : a));
   const latest = cols[cols.length - 1];
   const multi = series.length > 1;
+  const anyReinvest = cols.some((c) => c.reinvest > 0);
 
-  const bar = (value: number, cls: string, label: string | null) => (
-    <div
-      className={`relative w-1/2 max-w-6 rounded-t-[4px] transition-[filter] group-hover:brightness-110 ${cls}`}
-      style={{ height: `${pct(value)}%`, minHeight: value > 0 ? 2 : 0 }}
-    >
-      {label ? (
-        <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-[11px] font-semibold whitespace-nowrap tabular-nums">
-          {label}
-        </span>
-      ) : null}
-    </div>
+  const label = (text: string) => (
+    <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-[11px] font-semibold whitespace-nowrap tabular-nums">
+      {text}
+    </span>
   );
 
   return (
@@ -127,25 +131,48 @@ export function CashflowChart({
 
                     {/* deposit | withdraw pair, 2px apart, anchored to the baseline */}
                     <div className="absolute inset-x-0 bottom-0 flex h-full items-end justify-center gap-[2px] px-[12%]">
-                      {bar(
-                        c.deposit,
-                        "bg-pos",
-                        c === biggestIn && c.deposit > 0
-                          ? compact(c.deposit)
-                          : null,
-                      )}
-                      {bar(
-                        c.withdraw,
-                        "bg-neg",
-                        c === biggestOut && c.withdraw > 0
-                          ? compact(c.withdraw)
-                          : null,
-                      )}
+                      {/* deposit column: fresh money at the bottom, reinvested returns on top, 2px gap */}
+                      <div
+                        className="relative flex w-1/2 max-w-6 flex-col-reverse gap-[2px] transition-[filter] group-hover:brightness-110"
+                        style={{ height: `${pct(c.deposit)}%` }}
+                      >
+                        {c.fresh > 0 ? (
+                          <div
+                            className={`min-h-[2px] bg-pos ${c.reinvest > 0 ? "" : "rounded-t-[4px]"}`}
+                            style={{ flexGrow: c.fresh, flexBasis: 0 }}
+                          />
+                        ) : null}
+                        {c.reinvest > 0 ? (
+                          <div
+                            className="min-h-[2px] rounded-t-[4px]"
+                            style={{
+                              flexGrow: c.reinvest,
+                              flexBasis: 0,
+                              background: REINVEST_BG,
+                            }}
+                          />
+                        ) : null}
+                        {c === biggestIn && c.deposit > 0
+                          ? label(compact(c.deposit))
+                          : null}
+                      </div>
+
+                      <div
+                        className="relative w-1/2 max-w-6 rounded-t-[4px] bg-neg transition-[filter] group-hover:brightness-110"
+                        style={{
+                          height: `${pct(c.withdraw)}%`,
+                          minHeight: c.withdraw > 0 ? 2 : 0,
+                        }}
+                      >
+                        {c === biggestOut && c.withdraw > 0
+                          ? label(compact(c.withdraw))
+                          : null}
+                      </div>
                     </div>
 
                     <div
                       role="tooltip"
-                      className={`pointer-events-none absolute top-2 z-10 w-64 rounded-xl border border-line bg-surface p-3 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${side}`}
+                      className={`pointer-events-none absolute top-2 z-10 w-72 rounded-xl border border-line bg-surface p-3 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${side}`}
                     >
                       <p className="mb-2 font-semibold">ปี {c.year}</p>
                       {c.parts.length ? (
@@ -154,7 +181,10 @@ export function CashflowChart({
                             <tr className="text-muted">
                               <th className="pb-1 text-left font-normal" />
                               <th className="pb-1 text-right font-normal">
-                                ฝาก
+                                เงินใหม่
+                              </th>
+                              <th className="pb-1 text-right font-normal">
+                                นำกลับ
                               </th>
                               <th className="pb-1 text-right font-normal">
                                 ถอน
@@ -174,39 +204,35 @@ export function CashflowChart({
                                   {p.s.emoji} {p.s.name}
                                 </td>
                                 <td className="py-0.5 text-right text-pos">
-                                  {p.deposit ? fmt(p.deposit, 0) : "-"}
+                                  {p.fresh ? fmt(p.fresh, 0) : "-"}
+                                </td>
+                                <td className="py-0.5 text-right">
+                                  {p.reinvest ? fmt(p.reinvest, 0) : "-"}
                                 </td>
                                 <td className="py-0.5 text-right text-neg">
                                   {p.withdraw ? fmt(p.withdraw, 0) : "-"}
                                 </td>
                               </tr>
                             ))}
-                            {c.parts.length > 1 ? (
-                              <tr className="border-t border-line font-semibold">
-                                <td className="pt-1">รวม</td>
-                                <td className="pt-1 text-right text-pos">
-                                  {fmt(c.deposit, 0)}
-                                </td>
-                                <td className="pt-1 text-right text-neg">
-                                  {c.withdraw ? fmt(c.withdraw, 0) : "-"}
-                                </td>
-                              </tr>
-                            ) : null}
                           </tbody>
                         </table>
                       ) : (
                         <p className="text-muted">ไม่มีรายการ</p>
                       )}
                       <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-line pt-2 tabular-nums">
-                        <dt className="text-muted">สุทธิ (ฝาก − ถอน)</dt>
+                        <dt className="text-muted">
+                          เงินเก็บสุทธิ (ใหม่ − ถอน)
+                        </dt>
                         <dd
-                          className={`text-right font-semibold ${c.deposit - c.withdraw < 0 ? "text-neg" : "text-pos"}`}
+                          className={`text-right font-semibold ${c.fresh - c.withdraw < 0 ? "text-neg" : "text-pos"}`}
                         >
-                          {fmtSigned(c.deposit - c.withdraw)}
+                          {fmtSigned(c.fresh - c.withdraw)}
                         </dd>
                         {c.capital !== null ? (
                           <>
-                            <dt className="text-muted">เงินต้นสะสม</dt>
+                            <dt className="text-muted">
+                              เงินต้นจากกระเป๋าสะสม
+                            </dt>
                             <dd className="text-right">{fmt(c.capital)}</dd>
                           </>
                         ) : null}
@@ -233,13 +259,22 @@ export function CashflowChart({
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
             <span className="flex items-center gap-1.5">
               <span className="size-2.5 rounded-sm bg-pos" />
-              ฝาก
+              💰 เงินใหม่
             </span>
+            {anyReinvest ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="size-2.5 rounded-sm"
+                  style={{ background: REINVEST_BG }}
+                />
+                🔁 นำกลับมาลงทุน
+              </span>
+            ) : null}
             <span className="flex items-center gap-1.5">
               <span className="size-2.5 rounded-sm bg-neg" />
               ถอน
             </span>
-            <span>💡 ชี้ที่ปีเพื่อดูยอดแยกพอร์ตและยอดสุทธิ</span>
+            <span>💡 ชี้ที่ปีเพื่อดูรายละเอียด</span>
           </div>
         </div>
       </div>

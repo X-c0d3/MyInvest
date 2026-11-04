@@ -8,6 +8,7 @@ import {
 } from "@/lib/data";
 import {
   buildFx,
+  cashflowThb,
   dividendGross,
   dividendNet,
   dividendTax,
@@ -62,6 +63,10 @@ export default async function DividendsPage({
     (s, d) => s + dividendNet(d) * fx.rateOf(d.portfolioId),
     0,
   );
+  // Dividends the broker paid out to the bank and the owner moved back into a portfolio.
+  const reinvested = cashflows
+    .filter((c) => c.type === "deposit" && c.source === "dividend")
+    .reduce((s, c) => s + cashflowThb(c, fx), 0);
   const totalTax = rows.reduce(
     (s, d) => s + dividendTax(d) * fx.rateOf(d.portfolioId),
     0,
@@ -115,7 +120,7 @@ export default async function DividendsPage({
         </div>
       </PageHeader>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           emoji="💰"
           label="ปันผลสุทธิสะสม (฿)"
@@ -127,6 +132,16 @@ export default async function DividendsPage({
           label="ภาษีหัก ณ ที่จ่ายสะสม (฿)"
           value={fmt(totalTax)}
           hint="หุ้นไทยใช้ขอคืนภาษีได้"
+        />
+        <Stat
+          emoji="🔁"
+          label="นำกลับมาลงทุนแล้ว (฿)"
+          value={fmt(reinvested)}
+          hint={
+            totalNet > 0
+              ? `${fmtPct((reinvested / totalNet) * 100)} ของปันผลทั้งหมด · บันทึกเป็นเงินฝาก "ปันผลนำกลับ"`
+              : undefined
+          }
         />
         <Stat
           emoji="🔔"

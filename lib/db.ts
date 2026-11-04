@@ -97,6 +97,13 @@ const MIGRATIONS = [
      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
      PRIMARY KEY (user_id, currency)
    );`,
+  // v2: separate the owner's own money from returns moved back in.
+  //  - cashflows.source (deposits only): 'new' = fresh money (capital),
+  //    'dividend' = dividends paid out to the bank and re-deposited (cash, not capital),
+  //    'realized' = back-dated sale profit recorded as a deposit before trades were tracked (a return, not capital).
+  //  - portfolios.dividends_to_cash: 0 = the broker pays dividends to a bank account (Thai brokers), 1 = into portfolio cash.
+  `ALTER TABLE cashflows ADD COLUMN source TEXT NOT NULL DEFAULT 'new' CHECK (source IN ('new', 'dividend', 'realized'));
+   ALTER TABLE portfolios ADD COLUMN dividends_to_cash INTEGER NOT NULL DEFAULT 0 CHECK (dividends_to_cash IN (0, 1));`,
 ];
 
 function migrate(db: Database.Database) {

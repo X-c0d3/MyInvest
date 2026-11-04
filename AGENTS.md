@@ -68,10 +68,12 @@ There is no test suite. Verify with type check, lint, build, and a look in the b
 
 ### Money and calculations (`lib/calc.ts`)
 - Average-cost method: buy fees are added to cost, and sell fees come out of proceeds.
-- Dividend gross = shares × dividend per share. `tax_rate` is a per-row % (Thai stocks are usually 10%, US 15%, and some rows differ). The net amount is **added to portfolio cash automatically**.
-- So **never record a dividend that was re-deposited as a deposit** (the old sheet's "เงินจากกำไรปันผล" rows): it would count twice.
+- Dividend gross = shares × dividend per share. `tax_rate` is a per-row % (Thai stocks are usually 10%, US 15%, and some rows differ).
+- **Where money really goes (owner's setup):** sale proceeds stay in the portfolio as cash, but Thai brokers pay **dividends out to a bank account**. Each portfolio's `dividends_to_cash` says which applies; with 0 (the default) dividends do **not** add to portfolio cash.
+- Every deposit has a `source`: `new` = fresh money from the owner's pocket (**capital**), `dividend` = a dividend moved back in (cash only: the dividend was already counted as a return), `realized` = back-dated sale profit the old sheet logged as a deposit (cash and a realized return, not capital). Withdrawals always reduce capital. Use `isCapital()` from `lib/calc.ts`.
+- เงินต้นจากกระเป๋า (own capital) = `new` deposits − withdrawals. Total profit = portfolio value + dividends still outside the portfolio − own capital. Yearly return % = (realized P/L incl. `realized` deposits + net dividends) ÷ cumulative own capital at year end.
 - Each portfolio has a currency, and amounts are stored in that currency. `cashflows.amount_thb` is the baht actually transferred (equal to `amount` for THB portfolios). `buildFx()` converts totals to THB using the owner's rate from `fx_rates`, or else the average rate implied by their deposits.
-- Portfolio value = cash + holdings (latest price if set, otherwise cost). Yearly return % = (realized P/L + net dividends) ÷ cumulative net capital at year end.
+- Portfolio value = cash + holdings (latest price if set, otherwise cost).
 
 ### UI conventions
 - **Never hardcode portfolio names or ids.** Build tabs, filters and legends from `listPortfolios()`. Use `portfolioEmoji(p)` for the icon (🪙 for crypto, otherwise the currency flag). Use `seriesColor(index)` for chart color, where the index is the portfolio's position in the **full** portfolio list, so a portfolio keeps its color when filters change.
@@ -103,5 +105,5 @@ There is no test suite. Verify with type check, lint, build, and a look in the b
 The owner sends screenshots of Google Sheets tabs. To import:
 1. Check which user and portfolio they belong to, and that no rows already exist in that date range (avoid duplicates).
 2. Insert in one transaction with a small `better-sqlite3` script, using the exact amounts from the sheet. If a sheet's total disagrees with shares × price, keep the total and note it in the row.
-3. Skip dividend re-deposit rows ("เงินจากกำไรปันผล"). Import sale proceeds ("เงินจากกำไรขายหุ้น …") as deposits unless the owner says otherwise.
+3. Import "เงินจากกำไรปันผล" rows as deposits with `source = 'dividend'`, and "เงินจากกำไรขายหุ้น …" rows with `source = 'realized'`. Everything else is `source = 'new'`.
 4. Compare yearly totals with the sheet's own summary and report any differences and assumptions, such as a missing or obviously mistyped date.

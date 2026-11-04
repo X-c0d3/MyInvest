@@ -10,10 +10,16 @@ import {
   Wallet,
 } from "lucide-react";
 import { requireUser } from "@/lib/auth";
-import { listCashflows, listFxRates, listPortfolios } from "@/lib/data";
-import { buildFx, cashflowThb, yearOf } from "@/lib/calc";
+import {
+  listCashflows,
+  listFxRates,
+  listPortfolios,
+  type Cashflow,
+} from "@/lib/data";
+import { buildFx, cashflowThb, isCapital, yearOf } from "@/lib/calc";
 import { saveCashflowAction } from "@/app/actions";
 import {
+  CASH_SOURCE_LABEL,
   fmt,
   fmtDate,
   fmtPct,
@@ -45,8 +51,16 @@ import {
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
 export const instant = false;
 
-const TYPES = { deposit: "ฝาก", withdraw: "ถอน" } as const;
-type FlowType = keyof typeof TYPES;
+/** History filter kinds: a deposit's source, or a withdrawal. */
+const KINDS = {
+  new: `${CASH_SOURCE_LABEL.new.emoji} ${CASH_SOURCE_LABEL.new.label}`,
+  dividend: `${CASH_SOURCE_LABEL.dividend.emoji} ${CASH_SOURCE_LABEL.dividend.label}`,
+  realized: `${CASH_SOURCE_LABEL.realized.emoji} ${CASH_SOURCE_LABEL.realized.label}`,
+  withdraw: "⬆️ ถอน",
+} as const;
+type Kind = keyof typeof KINDS;
+const kindOf = (c: Cashflow): Kind =>
+  c.type === "withdraw" ? "withdraw" : c.source;
 
 export default async function CashflowsPage({
   searchParams,
@@ -59,17 +73,18 @@ export default async function CashflowsPage({
   const portById = new Map(portfolios.map((p) => [p.id, p]));
   const fx = buildFx(portfolios, all, listFxRates(user.id));
   const hasForeign = portfolios.some((p) => p.currency !== "THB");
-  const thb = (c: (typeof all)[number]) => cashflowThb(c, fx);
+  const thb = (c: Cashflow) => cashflowThb(c, fx);
+  const total = (xs: Cashflow[]) => xs.reduce((s, c) => s + thb(c), 0);
 
-  // History filters live in the URL: ?h=<portfolio id> and ?t=deposit|withdraw.
+  // History filters live in the URL: ?h=<portfolio id> and ?t=<kind>.
   const filterPort = pickPortfolio(portfolios, sp.h);
-  const filterType =
-    (Object.keys(TYPES) as FlowType[]).find((t) => t === sp.t) ?? null;
+  const filterKind =
+    (Object.keys(KINDS) as Kind[]).find((k) => k === sp.t) ?? null;
   const query = (
-    over: { h?: number | null; t?: FlowType | null; extra?: string } = {},
+    over: { h?: number | null; t?: Kind | null; extra?: string } = {},
   ) => {
     const h = "h" in over ? over.h : filterPort;
-    const t = "t" in over ? over.t : filterType;
+    const t = "t" in over ? over.t : filterKind;
     const qs = [h ? `h=${h}` : "", t ? `t=${t}` : "", over.extra ?? ""]
       .filter(Boolean)
       .join("&");
@@ -78,36 +93,37 @@ export default async function CashflowsPage({
   const listHref = query();
 
   // ---- totals (all portfolios) ----
-  const deposit = all
-    .filter((c) => c.type === "deposit")
-    .reduce((s, c) => s + thb(c), 0);
-  const withdraw = all
-    .filter((c) => c.type === "withdraw")
-    .reduce((s, c) => s + thb(c), 0);
-  const depositCount = all.filter((c) => c.type === "deposit").length;
-  const netTotal = deposit - withdraw;
+  const byKind = (k: Kind) => all.filter((c) => kindOf(c) === k);
+  const fresh = total(byKind("new"));
+  const reinvestDividend = total(byKind("dividend"));
+  const reinvestRealized = total(byKind("realized"));
+  const withdraw = total(byKind("withdraw"));
+  const ownCapital = fresh - withdraw;
 
   // ---- per portfolio; colors follow the portfolio's position among all portfolios ----
   const perPort = portfolios
     .map((p, i) => {
       const rows = all.filter((c) => c.portfolioId === p.id);
-      const dep = rows
-        .filter((c) => c.type === "deposit")
-        .reduce((s, c) => s + thb(c), 0);
-      const wd = rows
-        .filter((c) => c.type === "withdraw")
-        .reduce((s, c) => s + thb(c), 0);
+      const f = total(rows.filter((c) => kindOf(c) === "new"));
+      const r = total(
+        rows.filter((c) => c.type === "deposit" && c.source !== "new"),
+      );
+      const w = total(rows.filter((c) => c.type === "withdraw"));
       return {
         p,
         color: seriesColor(i),
         count: rows.length,
-        deposit: dep,
-        withdraw: wd,
-        net: dep - wd,
+        fresh: f,
+        reinvest: r,
+        withdraw: w,
+        capital: f - w,
+        /** เงินเข้าพอร์ตสุทธิ: everything moved in minus withdrawals. */
+        netIn: f + r - w,
       };
     })
     .filter((x) => x.count > 0);
   const colorOf = new Map(perPort.map((x) => [x.p.id, x.color]));
+  const netInTotal = perPort.reduce((s, x) => s + x.netIn, 0);
 
   // ---- chart data ----
   const series: FlowSeries[] = perPort.map((x) => ({
@@ -120,20 +136,26 @@ export default async function CashflowsPage({
   for (const c of all) {
     const year = yearOf(c.date);
     const y = yearMap.get(year) ?? { year, capital: 0, parts: {} };
-    const part = (y.parts[c.portfolioId] ??= { deposit: 0, withdraw: 0 });
-    part[c.type] += thb(c);
+    const part = (y.parts[c.portfolioId] ??= {
+      fresh: 0,
+      reinvest: 0,
+      withdraw: 0,
+    });
+    const k = kindOf(c);
+    part[k === "withdraw" ? "withdraw" : k === "new" ? "fresh" : "reinvest"] +=
+      thb(c);
     yearMap.set(year, y);
   }
-  const yearNet = (y: FlowYear) =>
-    Object.values(y.parts).reduce((s, p) => s + p.deposit - p.withdraw, 0);
+  const yearSaved = (y: FlowYear) =>
+    Object.values(y.parts).reduce((s, p) => s + p.fresh - p.withdraw, 0);
   const years = [...yearMap.values()].sort((a, b) => a.year - b.year);
   let running = 0;
   for (const y of years) {
-    running += yearNet(y);
+    running += yearSaved(y);
     y.capital = running;
   }
   const bestYear = years.reduce<FlowYear | null>(
-    (a, b) => (!a || yearNet(b) > yearNet(a) ? b : a),
+    (a, b) => (!a || yearSaved(b) > yearSaved(a) ? b : a),
     null,
   );
 
@@ -141,34 +163,44 @@ export default async function CashflowsPage({
   const rows = all.filter(
     (c) =>
       (!filterPort || c.portfolioId === filterPort) &&
-      (!filterType || c.type === filterType),
+      (!filterKind || kindOf(c) === filterKind),
   );
   const portCount = (id: number | null) =>
     all.filter(
       (c) =>
-        (!id || c.portfolioId === id) && (!filterType || c.type === filterType),
+        (!id || c.portfolioId === id) &&
+        (!filterKind || kindOf(c) === filterKind),
     ).length;
-  const typeCount = (t: FlowType | null) =>
+  const kindCount = (k: Kind | null) =>
     all.filter(
       (c) =>
-        (!t || c.type === t) && (!filterPort || c.portfolioId === filterPort),
+        (!k || kindOf(c) === k) &&
+        (!filterPort || c.portfolioId === filterPort),
     ).length;
+  const shownKinds = (Object.keys(KINDS) as Kind[]).filter(
+    (k) => k === "new" || k === "withdraw" || all.some((c) => kindOf(c) === k),
+  );
   const showPortfolio =
     !filterPort && new Set(rows.map((r) => r.portfolioId)).size > 1;
 
   const groups: {
     year: number;
-    items: typeof rows;
-    deposit: number;
+    items: Cashflow[];
+    fresh: number;
+    reinvest: number;
     withdraw: number;
   }[] = [];
   for (const c of rows) {
     const year = yearOf(c.date);
     let g = groups.at(-1);
     if (!g || g.year !== year)
-      groups.push((g = { year, items: [], deposit: 0, withdraw: 0 }));
+      groups.push(
+        (g = { year, items: [], fresh: 0, reinvest: 0, withdraw: 0 }),
+      );
     g.items.push(c);
-    g[c.type] += thb(c);
+    const k = kindOf(c);
+    g[k === "withdraw" ? "withdraw" : k === "new" ? "fresh" : "reinvest"] +=
+      thb(c);
   }
 
   const chip = (
@@ -208,19 +240,19 @@ export default async function CashflowsPage({
       <PageHeader
         emoji="💸"
         title="ฝาก-ถอน"
-        subtitle="เงินที่โอนเข้าและถอนออกจากแต่ละพอร์ต"
+        subtitle="เงินที่โอนเข้าและถอนออกจากแต่ละพอร์ต แยกเงินใหม่กับกำไรที่นำกลับมาลงทุน"
       >
         <NewButton basePath="/cashflows" href={query({ extra: "new=1" })} />
       </PageHeader>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-4 grid gap-4 sm:grid-cols-3">
         <Stat
           emoji={<ArrowDownLeft className="size-5" />}
           iconClassName="bg-pos-soft text-pos"
           label="ฝากรวม (฿)"
-          value={fmt(deposit)}
+          value={fmt(fresh + reinvestDividend + reinvestRealized)}
           tone="text-pos"
-          hint={`${depositCount} ครั้ง`}
+          hint={`💰 เงินใหม่ ${fmt(fresh, 0)} · 🔁 นำกลับ ${fmt(reinvestDividend + reinvestRealized, 0)}`}
         />
         <Stat
           emoji={<ArrowUpRight className="size-5" />}
@@ -228,18 +260,14 @@ export default async function CashflowsPage({
           label="ถอนรวม (฿)"
           value={fmt(withdraw)}
           tone="text-neg"
-          hint={`${all.length - depositCount} ครั้ง`}
+          hint={`${byKind("withdraw").length} ครั้ง`}
         />
         <Stat
           emoji={<Landmark className="size-5" />}
           iconClassName="bg-accent-soft text-accent"
-          label="เงินต้นสุทธิ (฿)"
-          value={fmt(netTotal)}
-          hint={
-            deposit > 0
-              ? `ถอนออกไปแล้ว ${fmtPct((withdraw / deposit) * 100)} ของเงินที่ฝาก`
-              : undefined
-          }
+          label="เงินเข้าพอร์ตสุทธิ (ฝาก − ถอน) (฿)"
+          value={fmt(netInTotal)}
+          hint={`💰 เงินต้นจากกระเป๋า ${fmt(ownCapital, 0)} · ใช้คำนวณกำไร %`}
         />
       </div>
 
@@ -249,9 +277,9 @@ export default async function CashflowsPage({
           icon={<BarChart3 className="size-5" />}
           className="xl:col-span-2"
           action={
-            bestYear && yearNet(bestYear) > 0 ? (
+            bestYear && yearSaved(bestYear) > 0 ? (
               <span className="badge bg-pos-soft text-pos">
-                💪 ออมมากสุดปี {bestYear.year}: {fmt(yearNet(bestYear), 0)}
+                💪 ออมมากสุดปี {bestYear.year}: {fmt(yearSaved(bestYear), 0)}
               </span>
             ) : null
           }
@@ -259,21 +287,24 @@ export default async function CashflowsPage({
           <CashflowChart series={series} years={years} />
         </Card>
 
-        <Card title="เงินต้นแยกตามพอร์ต" icon={<Wallet className="size-5" />}>
+        <Card
+          title="เงินเข้าพอร์ตแยกตามพอร์ต"
+          icon={<Wallet className="size-5" />}
+        >
           {perPort.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">
               🌱 ยังไม่มีข้อมูล
             </p>
           ) : null}
-          {/* share of net capital, one segment per portfolio */}
-          {perPort.length > 1 && netTotal > 0 ? (
+          {/* share of net money in, one segment per portfolio */}
+          {perPort.length > 1 && netInTotal > 0 ? (
             <div className="mb-3 flex h-2 gap-[2px] overflow-hidden rounded-full">
               {perPort
-                .filter((x) => x.net > 0)
+                .filter((x) => x.netIn > 0)
                 .map((x) => (
                   <div
                     key={x.p.id}
-                    style={{ flexGrow: x.net, background: x.color }}
+                    style={{ flexGrow: x.netIn, background: x.color }}
                     title={x.p.name}
                   />
                 ))}
@@ -285,13 +316,11 @@ export default async function CashflowsPage({
                 <Link
                   href={query({ h: x.p.id }) + "#history"}
                   scroll={false}
-                  className={`flex items-center gap-3 rounded-xl px-2.5 py-2 transition hover:bg-subtle ${
-                    filterPort === x.p.id ? "bg-subtle" : ""
-                  }`}
+                  className={`flex items-center gap-3 rounded-xl px-2.5 py-2 transition hover:bg-subtle ${filterPort === x.p.id ? "bg-subtle" : ""}`}
                   title="ดูประวัติพอร์ตนี้"
                 >
                   <span
-                    className="h-8 w-1 shrink-0 rounded-full"
+                    className="h-10 w-1 shrink-0 rounded-full"
                     style={{ background: x.color }}
                   />
                   <span className="min-w-0 flex-1">
@@ -300,25 +329,22 @@ export default async function CashflowsPage({
                         {portfolioEmoji(x.p)} {x.p.name}
                       </span>
                       <span
-                        className={`text-sm font-semibold tabular-nums ${x.net < 0 ? "text-neg" : ""}`}
+                        className={`text-sm font-semibold tabular-nums ${x.netIn < 0 ? "text-neg" : ""}`}
+                        title="เงินเข้าพอร์ตสุทธิ = เงินใหม่ + นำกลับมาลงทุน − ถอน"
                       >
-                        {fmt(x.net, 0)}
+                        {fmt(x.netIn)}
                       </span>
                     </span>
                     <span className="flex justify-between gap-2 text-xs text-muted tabular-nums">
                       <span>
-                        <span className="text-pos">+{fmt(x.deposit, 0)}</span>
-                        {x.withdraw ? (
-                          <span className="text-neg">
-                            {" "}
-                            −{fmt(x.withdraw, 0)}
-                          </span>
-                        ) : null}{" "}
-                        · {x.count} รายการ
+                        💰 เงินต้น {fmt(x.capital, 0)}
+                        {x.reinvest ? (
+                          <span> · 🔁 นำกลับ {fmt(x.reinvest, 0)}</span>
+                        ) : null}
                       </span>
-                      {netTotal > 0 && perPort.length > 1 ? (
+                      {netInTotal > 0 && perPort.length > 1 ? (
                         <span>
-                          {fmtPct((Math.max(0, x.net) / netTotal) * 100)}
+                          {fmtPct((Math.max(0, x.netIn) / netInTotal) * 100)}
                         </span>
                       ) : null}
                     </span>
@@ -327,6 +353,10 @@ export default async function CashflowsPage({
               </li>
             ))}
           </ul>
+          <p className="mt-3 text-xs text-muted">
+            💡 ตัวเลขหลักคือเงินเข้าพอร์ตสุทธิ (เงินใหม่ + นำกลับมาลงทุน − ถอน)
+            · 💰 เงินต้น = เงินใหม่ − ถอน · 🔁 = กำไรที่นำกลับมาลงทุน
+          </p>
         </Card>
       </div>
 
@@ -351,11 +381,39 @@ export default async function CashflowsPage({
           <Field label="ประเภท">
             <select
               name="type"
-              defaultValue={editing?.type ?? filterType ?? "deposit"}
+              defaultValue={
+                editing?.type ??
+                (filterKind === "withdraw" ? "withdraw" : "deposit")
+              }
               className="input"
             >
               <option value="deposit">⬇️ ฝาก</option>
               <option value="withdraw">⬆️ ถอน</option>
+            </select>
+          </Field>
+          <Field
+            label="ที่มาของเงิน (เฉพาะรายการฝาก)"
+            wide
+            hint="ปันผลที่นำกลับและกำไรขายย้อนหลัง ไม่นับเป็นเงินต้น เพื่อให้กำไร % ถูกต้อง"
+          >
+            <select
+              name="source"
+              defaultValue={
+                editing?.source ??
+                (filterKind && filterKind !== "withdraw" ? filterKind : "new")
+              }
+              className="input"
+            >
+              {(
+                Object.keys(
+                  CASH_SOURCE_LABEL,
+                ) as (keyof typeof CASH_SOURCE_LABEL)[]
+              ).map((s) => (
+                <option key={s} value={s}>
+                  {CASH_SOURCE_LABEL[s].emoji} {CASH_SOURCE_LABEL[s].label}:{" "}
+                  {CASH_SOURCE_LABEL[s].hint}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="จำนวนเงิน (สกุลเงินของพอร์ต)">
@@ -443,16 +501,16 @@ export default async function CashflowsPage({
             <div className="flex flex-wrap gap-2">
               {chip(
                 query({ t: null }) + "#history",
-                !filterType,
+                !filterKind,
                 "ทั้งหมด",
-                typeCount(null),
+                kindCount(null),
               )}
-              {(Object.keys(TYPES) as FlowType[]).map((t) =>
+              {shownKinds.map((k) =>
                 chip(
-                  query({ t }) + "#history",
-                  filterType === t,
-                  `${t === "deposit" ? "⬇️" : "⬆️"} ${TYPES[t]}`,
-                  typeCount(t),
+                  query({ t: k }) + "#history",
+                  filterKind === k,
+                  KINDS[k],
+                  kindCount(k),
                 ),
               )}
             </div>
@@ -480,16 +538,20 @@ export default async function CashflowsPage({
                     {g.items.length} รายการ
                   </span>
                   <span className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-sm tabular-nums">
-                    {g.deposit ? (
-                      <span className="text-pos">+{fmt(g.deposit)}</span>
+                    {g.fresh ? (
+                      <span className="text-pos">💰 +{fmt(g.fresh)}</span>
+                    ) : null}
+                    {g.reinvest ? (
+                      <span className="text-muted">🔁 +{fmt(g.reinvest)}</span>
                     ) : null}
                     {g.withdraw ? (
                       <span className="text-neg">−{fmt(g.withdraw)}</span>
                     ) : null}
                     <span
-                      className={`badge ${g.deposit - g.withdraw >= 0 ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
+                      className={`badge ${g.fresh + g.reinvest - g.withdraw >= 0 ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
+                      title="ฝาก (เงินใหม่ + นำกลับ) − ถอน"
                     >
-                      สุทธิ {fmtSigned(g.deposit - g.withdraw)}
+                      สุทธิ {fmtSigned(g.fresh + g.reinvest - g.withdraw)}
                     </span>
                   </span>
                 </summary>
@@ -513,6 +575,7 @@ export default async function CashflowsPage({
                         const p = portById.get(c.portfolioId);
                         const ccy = p?.currency ?? "THB";
                         const isDeposit = c.type === "deposit";
+                        const src = CASH_SOURCE_LABEL[c.source];
                         return (
                           <tr key={c.id}>
                             <td className="text-muted tabular-nums">
@@ -530,8 +593,16 @@ export default async function CashflowsPage({
                                   )}
                                 </span>
                                 <span className="font-medium">
-                                  {TYPES[c.type]}
+                                  {isDeposit ? "ฝาก" : "ถอน"}
                                 </span>
+                                {isDeposit && !isCapital(c) ? (
+                                  <span
+                                    className="badge bg-accent-soft text-accent"
+                                    title={src.hint}
+                                  >
+                                    {src.emoji} {src.label}
+                                  </span>
+                                ) : null}
                               </span>
                             </td>
                             {showPortfolio ? (
@@ -548,7 +619,7 @@ export default async function CashflowsPage({
                               </td>
                             ) : null}
                             <td
-                              className={`num font-semibold ${isDeposit ? "text-pos" : "text-neg"}`}
+                              className={`num font-semibold ${isDeposit ? (isCapital(c) ? "text-pos" : "text-foreground") : "text-neg"}`}
                             >
                               {isDeposit ? "+" : "−"}
                               <Money value={c.amount} currency={ccy} />
