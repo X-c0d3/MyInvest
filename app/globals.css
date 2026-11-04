@@ -21,6 +21,15 @@
   --neg-soft: #ffe4e6;
   --warn-soft: #fef3c7;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 16px rgb(16 24 40 / 0.04);
+  /* categorical series, fixed order (validated for CVD in both themes) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
 }
 
 :root[data-theme="dark"] {
@@ -41,6 +50,14 @@
   --neg-soft: #3a1520;
   --warn-soft: #3a2a0c;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.25);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 }
 
 @theme inline {
@@ -59,8 +76,22 @@
   --color-neg: var(--neg);
   --color-neg-soft: var(--neg-soft);
   --color-warn-soft: var(--warn-soft);
-  --font-sans: var(--font-thai), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    var(--font-thai), var(--font-geist-sans), ui-sans-serif, system-ui,
+    sans-serif;
   --font-mono: var(--font-geist-mono);
+}
+
+/* Lock page scroll behind an open modal. */
+html:has(dialog[open]) {
+  overflow: hidden;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
 body {
@@ -70,7 +101,7 @@ body {
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-line bg-surface p-5;
+    @apply rounded-2xl border border-line bg-surface p-4;
     box-shadow: var(--shadow);
   }
   .input {
@@ -83,7 +114,8 @@ body {
     @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line px-4 py-2 text-sm transition hover:bg-subtle;
   }
   .icon-btn {
-    @apply inline-flex size-8 items-center justify-center rounded-lg text-muted transition hover:bg-subtle hover:text-foreground;
+    /* relative: keeps the absolutely positioned sr-only label inside table scroll containers */
+    @apply relative inline-flex size-8 items-center justify-center rounded-lg text-muted transition hover:bg-subtle hover:text-foreground;
   }
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap;
@@ -105,5 +137,16 @@ body {
   }
   .table tbody tr {
     @apply transition-colors hover:bg-subtle/60;
+  }
+  /* Row actions stay pinned to the right edge when a wide table scrolls sideways. */
+  .table td:has(> .row-actions),
+  .table th:last-child:empty {
+    position: sticky;
+    right: 0;
+    background: var(--surface);
+    box-shadow: -8px 0 8px -8px rgb(0 0 0 / 0.15);
+  }
+  .table tbody tr:hover td:has(> .row-actions) {
+    background: color-mix(in oklab, var(--subtle) 60%, var(--surface));
   }
 }

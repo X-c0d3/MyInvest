@@ -34,7 +34,11 @@ export function ThemeToggle() {
   };
 
   return (
-    <div role="radiogroup" aria-label="ธีม" className="inline-flex rounded-xl border border-line bg-surface-2 p-0.5">
+    <div
+      role="radiogroup"
+      aria-label="ธีม"
+      className="inline-flex rounded-xl border border-line bg-surface-2 p-0.5"
+    >
       {OPTIONS.map(({ value, label, Icon }) => (
         <button
           key={value}
@@ -44,7 +48,9 @@ export function ThemeToggle() {
           title={label}
           onClick={() => choose(value)}
           className={`inline-flex size-8 items-center justify-center rounded-lg transition ${
-            pref === value ? "bg-surface text-accent shadow-sm" : "text-muted hover:text-foreground"
+            pref === value
+              ? "bg-surface text-accent shadow-sm"
+              : "text-muted hover:text-foreground"
           }`}
         >
           <Icon className="size-4" />

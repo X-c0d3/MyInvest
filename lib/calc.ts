@@ -1,7 +1,16 @@
-import type { AssetType, Cashflow, Dividend, FxRate, Portfolio, Price, Trade } from "./data";
+import type {
+  AssetType,
+  Cashflow,
+  Dividend,
+  FxRate,
+  Portfolio,
+  Price,
+  Trade,
+} from "./data";
 
 export const dividendGross = (d: Dividend) => d.shares * d.dps;
-export const dividendTax = (d: Dividend) => (dividendGross(d) * d.taxRate) / 100;
+export const dividendTax = (d: Dividend) =>
+  (dividendGross(d) * d.taxRate) / 100;
 export const dividendNet = (d: Dividend) => dividendGross(d) - dividendTax(d);
 export const yearOf = (date: string) => Number(date.slice(0, 4));
 
@@ -23,7 +32,11 @@ export type Fx = {
  * Current rate = the one the user set; otherwise the average rate implied by their
  * foreign deposits (THB paid ÷ foreign amount received).
  */
-export function buildFx(portfolios: Portfolio[], cashflows: Cashflow[], rates: FxRate[]): Fx {
+export function buildFx(
+  portfolios: Portfolio[],
+  cashflows: Cashflow[],
+  rates: FxRate[],
+): Fx {
   const manual = new Map(rates.map((r) => [r.currency, r.rate]));
   const currencyOf = new Map(portfolios.map((p) => [p.id, p.currency]));
 
@@ -37,27 +50,37 @@ export function buildFx(portfolios: Portfolio[], cashflows: Cashflow[], rates: F
     sums.set(ccy, s);
   }
 
-  const resolved = new Map<string, { rate: number; source: FxSource }>([["THB", { rate: 1, source: "base" }]]);
+  const resolved = new Map<string, { rate: number; source: FxSource }>([
+    ["THB", { rate: 1, source: "base" }],
+  ]);
   for (const ccy of new Set(portfolios.map((p) => p.currency))) {
     if (ccy === "THB") continue;
     const m = manual.get(ccy);
     const s = sums.get(ccy);
     if (m) resolved.set(ccy, { rate: m, source: "manual" });
-    else if (s && s.amount > 0) resolved.set(ccy, { rate: s.thb / s.amount, source: "average" });
+    else if (s && s.amount > 0)
+      resolved.set(ccy, { rate: s.thb / s.amount, source: "average" });
     else resolved.set(ccy, { rate: 0, source: "missing" });
   }
 
-  const get = (ccy: string) => resolved.get(ccy) ?? (manual.has(ccy) ? { rate: manual.get(ccy)!, source: "manual" as const } : { rate: 0, source: "missing" as const });
+  const get = (ccy: string) =>
+    resolved.get(ccy) ??
+    (manual.has(ccy)
+      ? { rate: manual.get(ccy)!, source: "manual" as const }
+      : { rate: 0, source: "missing" as const });
   return {
     rate: (ccy) => get(ccy).rate,
     source: (ccy) => get(ccy).source,
     rateOf: (id) => get(currencyOf.get(id) ?? "THB").rate,
-    missing: [...resolved].filter(([, v]) => v.source === "missing").map(([k]) => k),
+    missing: [...resolved]
+      .filter(([, v]) => v.source === "missing")
+      .map(([k]) => k),
   };
 }
 
 /** Baht value of a cashflow: what was actually transferred if known, else converted at today's rate. */
-export const cashflowThb = (c: Cashflow, fx: Fx) => c.amountThb ?? c.amount * fx.rateOf(c.portfolioId);
+export const cashflowThb = (c: Cashflow, fx: Fx) =>
+  c.amountThb ?? c.amount * fx.rateOf(c.portfolioId);
 const signed = (c: Cashflow, n: number) => (c.type === "deposit" ? n : -n);
 
 // ---- positions ----
@@ -75,7 +98,12 @@ export type Holding = {
   unrealizedPct: number;
 };
 
-export type RealizedTrade = { tradeId: number; portfolioId: number; year: number; pnl: number };
+export type RealizedTrade = {
+  tradeId: number;
+  portfolioId: number;
+  year: number;
+  pnl: number;
+};
 
 /**
  * Replays trades oldest-first using the average-cost method (as Thai brokers report).
@@ -83,13 +111,30 @@ export type RealizedTrade = { tradeId: number; portfolioId: number; year: number
  */
 export function computePositions(trades: Trade[], prices: Price[]) {
   const priceMap = new Map(prices.map((p) => [p.symbol, p.price]));
-  const positions = new Map<string, { portfolioId: number; symbol: string; assetType: AssetType; qty: number; cost: number }>();
+  const positions = new Map<
+    string,
+    {
+      portfolioId: number;
+      symbol: string;
+      assetType: AssetType;
+      qty: number;
+      cost: number;
+    }
+  >();
   const realized: RealizedTrade[] = [];
 
-  const ordered = [...trades].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  const ordered = [...trades].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id - b.id,
+  );
   for (const t of ordered) {
     const key = `${t.portfolioId}:${t.symbol}`;
-    const pos = positions.get(key) ?? { portfolioId: t.portfolioId, symbol: t.symbol, assetType: t.assetType, qty: 0, cost: 0 };
+    const pos = positions.get(key) ?? {
+      portfolioId: t.portfolioId,
+      symbol: t.symbol,
+      assetType: t.assetType,
+      qty: 0,
+      cost: 0,
+    };
     pos.assetType = t.assetType;
     if (t.side === "buy") {
       pos.qty += t.quantity;
@@ -98,7 +143,12 @@ export function computePositions(trades: Trade[], prices: Price[]) {
       const avg = pos.qty > 0 ? pos.cost / pos.qty : 0;
       const sellQty = Math.min(t.quantity, pos.qty);
       const pnl = t.quantity * t.price - t.fee - avg * sellQty;
-      realized.push({ tradeId: t.id, portfolioId: t.portfolioId, year: yearOf(t.date), pnl });
+      realized.push({
+        tradeId: t.id,
+        portfolioId: t.portfolioId,
+        year: yearOf(t.date),
+        pnl,
+      });
       pos.qty -= sellQty;
       pos.cost -= avg * sellQty;
       if (pos.qty < 1e-9) {
@@ -150,12 +200,28 @@ export type YearRow = {
 };
 
 /** All amounts in THB. Foreign dividends and realized gains are converted at today's rate. */
-export function yearlySummary(cashflows: Cashflow[], dividends: Dividend[], realized: RealizedTrade[], fx: Fx): YearRow[] {
+export function yearlySummary(
+  cashflows: Cashflow[],
+  dividends: Dividend[],
+  realized: RealizedTrade[],
+  fx: Fx,
+): YearRow[] {
   const rows = new Map<number, YearRow>();
   const row = (year: number) => {
     let r = rows.get(year);
     if (!r) {
-      r = { year, deposit: 0, withdraw: 0, netDeposit: 0, dividendNet: 0, dividendTax: 0, realized: 0, capital: 0, dividendYieldPct: 0, returnPct: 0 };
+      r = {
+        year,
+        deposit: 0,
+        withdraw: 0,
+        netDeposit: 0,
+        dividendNet: 0,
+        dividendTax: 0,
+        realized: 0,
+        capital: 0,
+        dividendYieldPct: 0,
+        returnPct: 0,
+      };
       rows.set(year, r);
     }
     return r;
@@ -171,7 +237,8 @@ export function yearlySummary(cashflows: Cashflow[], dividends: Dividend[], real
     r.dividendNet += dividendNet(d) * fx.rateOf(d.portfolioId);
     r.dividendTax += dividendTax(d) * fx.rateOf(d.portfolioId);
   }
-  for (const t of realized) row(t.year).realized += t.pnl * fx.rateOf(t.portfolioId);
+  for (const t of realized)
+    row(t.year).realized += t.pnl * fx.rateOf(t.portfolioId);
 
   let capital = 0;
   return [...rows.values()]
@@ -181,7 +248,8 @@ export function yearlySummary(cashflows: Cashflow[], dividends: Dividend[], real
       capital += r.netDeposit;
       r.capital = capital;
       r.dividendYieldPct = capital > 0 ? (r.dividendNet / capital) * 100 : 0;
-      r.returnPct = capital > 0 ? ((r.realized + r.dividendNet) / capital) * 100 : 0;
+      r.returnPct =
+        capital > 0 ? ((r.realized + r.dividendNet) / capital) * 100 : 0;
       return r;
     });
 }
@@ -223,16 +291,24 @@ export function summarizePortfolio(
   realized: RealizedTrade[],
   fx: Fx,
 ): PortfolioSummary {
-  const own = <T extends { portfolioId: number }>(xs: T[]) => xs.filter((x) => x.portfolioId === portfolio.id);
+  const own = <T extends { portfolioId: number }>(xs: T[]) =>
+    xs.filter((x) => x.portfolioId === portfolio.id);
   const myCashflows = own(cashflows);
   const myHoldings = own(holdings);
   const rate = fx.rate(portfolio.currency);
 
   const capital = myCashflows.reduce((s, c) => s + signed(c, c.amount), 0);
-  const capitalThb = myCashflows.reduce((s, c) => s + signed(c, cashflowThb(c, fx)), 0);
+  const capitalThb = myCashflows.reduce(
+    (s, c) => s + signed(c, cashflowThb(c, fx)),
+    0,
+  );
   const divs = own(dividends).reduce((s, d) => s + dividendNet(d), 0);
   const tradeCash = own(trades).reduce(
-    (s, t) => s + (t.side === "buy" ? -(t.quantity * t.price + t.fee) : t.quantity * t.price - t.fee),
+    (s, t) =>
+      s +
+      (t.side === "buy"
+        ? -(t.quantity * t.price + t.fee)
+        : t.quantity * t.price - t.fee),
     0,
   );
   const cash = capital + divs + tradeCash;

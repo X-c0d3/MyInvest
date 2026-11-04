@@ -3,7 +3,8 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
-const DB_PATH = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "myinvest.db");
+const DB_PATH =
+  process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "myinvest.db");
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -120,7 +121,9 @@ function open() {
 
 // Opened lazily (not at import, so parallel build workers don't fight over the lock)
 // and kept on globalThis so dev hot reloads reuse one connection.
-const globalForDb = globalThis as unknown as { __myinvestDb?: Database.Database };
+const globalForDb = globalThis as unknown as {
+  __myinvestDb?: Database.Database;
+};
 
 export function getDb() {
   globalForDb.__myinvestDb ??= open();

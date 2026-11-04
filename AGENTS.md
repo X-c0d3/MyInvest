@@ -7,3 +7,101 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+# MyInvest — guide for AI agents
+
+Personal investment tracker that replaces the owner's Google Sheet. It records deposits and withdrawals, trades (Thai stocks, ETFs, foreign stocks, crypto) and dividends, then computes holdings, P/L, yearly returns and progress toward a goal. It supports multiple users with login, and each user's data is isolated.
+
+**The UI is in Thai.** Write every user-facing string in Thai and keep code and comments in English. The owner talks in Thai, so answer in Thai.
+
+## Stack
+
+- Next.js 16 App Router with `cacheComponents` and `partialPrefetching` on, React 19, TypeScript, Tailwind CSS v4
+- SQLite via `better-sqlite3`: no ORM, no API routes. Server Components read through `lib/data.ts`, and mutations are Server Actions.
+- `lucide-react` provides the icons. Charts are hand-built HTML/CSS with no chart library.
+
+## Commands
+
+| Task | Command |
+| --- | --- |
+| Dev server (owner usually runs it on :3000) | `npm run dev` |
+| Type check | `npx tsc --noEmit` |
+| Lint | `npm run lint` |
+| Production build | `npm run build` |
+| Format touched files | `npx prettier --write <files>` (default config) |
+
+There is no test suite. Verify with type check, lint, build, and a look in the browser (see "Verifying UI changes").
+
+## Where things are
+
+| Path | What |
+| --- | --- |
+| `lib/db.ts` | Lazy SQLite connection, base `SCHEMA`, and the `MIGRATIONS` array (tracked by `PRAGMA user_version`) |
+| `lib/auth.ts` | scrypt password hashing, sessions (random token, SHA-256 stored), `requireUser()` |
+| `lib/data.ts` | Every query and mutation. Each takes `userId` |
+| `lib/calc.ts` | Positions (average cost), FX, yearly summary, portfolio summary |
+| `lib/format.ts` | Number/date formatting, currency flags, asset labels, `portfolioEmoji`, `seriesColor` |
+| `lib/chart.ts` | `niceMax`, `compact` for chart axes |
+| `app/actions.ts` | Entity Server Actions (`handle()` wrapper, `ValidationError`) |
+| `app/auth-actions.ts` | Login, register, logout, change password, log out other devices |
+| `app/(main)/*` | Signed-in pages: `/` dashboard, `holdings`, `trades`, `dividends`, `cashflows`, `portfolios`, `account` |
+| `app/(auth)/*` | Login / register |
+| `components/ui.tsx` | Shared building blocks (see UI conventions) |
+| `components/form-modal.tsx`, `action-form.tsx`, `delete-button.tsx` | Form plumbing |
+| `components/*-chart.tsx` | Charts |
+| `proxy.ts` | Optimistic redirect to `/login` when there is no session cookie (Next 16 renamed middleware to proxy) |
+| `scripts/make-test-db.mjs` | Makes a safe copy of the database for testing |
+
+## Hard rules
+
+### Data and security
+- **`data/` holds the owner's real data and is gitignored.** Never delete, reset, migrate by hand, or write test rows into `data/myinvest.db`. Read-only queries are fine. Write to it only when the owner explicitly asks, for example to import rows from their spreadsheet.
+- Every page and every Server Action starts with `await requireUser()`. Never take a user id from the client.
+- Every query filters by `user_id`; every `UPDATE`/`DELETE` includes `AND user_id = ?`. A portfolio id coming from a form goes through `getPortfolio(userId, id)`.
+- Schema changes: **append** a new entry to `MIGRATIONS` in `lib/db.ts`. Never edit an existing migration or change `SCHEMA` in a way that breaks an existing database.
+
+### Next.js 16 specifics
+- With `cacheComponents`, reading the time or the request outside a dynamic scope errors. Pages in `app/(main)` export `instant = false` and call `requireUser()` first (it calls `connection()`), and only then use `Date.now()`, `new Date()` or `today()`.
+- Server Actions finish with `revalidatePath("/", "layout")` and then `redirect(...)` (the `handle()` wrapper does this).
+- `next/script` with `strategy="beforeInteractive"` loads the theme script. A constant exported from a `"use client"` file reaches a Server Component as a client reference, not a value, so shared constants live in `lib/`.
+- Read `node_modules/next/dist/docs/` before using an API you have not used in this repo.
+
+### Money and calculations (`lib/calc.ts`)
+- Average-cost method: buy fees are added to cost, and sell fees come out of proceeds.
+- Dividend gross = shares × dividend per share. `tax_rate` is a per-row % (Thai stocks are usually 10%, US 15%, and some rows differ). The net amount is **added to portfolio cash automatically**.
+- So **never record a dividend that was re-deposited as a deposit** (the old sheet's "เงินจากกำไรปันผล" rows): it would count twice.
+- Each portfolio has a currency, and amounts are stored in that currency. `cashflows.amount_thb` is the baht actually transferred (equal to `amount` for THB portfolios). `buildFx()` converts totals to THB using the owner's rate from `fx_rates`, or else the average rate implied by their deposits.
+- Portfolio value = cash + holdings (latest price if set, otherwise cost). Yearly return % = (realized P/L + net dividends) ÷ cumulative net capital at year end.
+
+### UI conventions
+- **Never hardcode portfolio names or ids.** Build tabs, filters and legends from `listPortfolios()`. Use `portfolioEmoji(p)` for the icon (🪙 for crypto, otherwise the currency flag). Use `seriesColor(index)` for chart color, where the index is the portfolio's position in the **full** portfolio list, so a portfolio keeps its color when filters change.
+- Colors come only from CSS tokens in `app/globals.css` (`bg-surface`, `bg-surface-2`, `text-muted`, `border-line`, `text-pos`/`bg-pos-soft`, `text-neg`/`bg-neg-soft`, `accent`, `--series-1..8`). Light and dark are set by `html[data-theme]`, and the `dark:` variant follows it. Any new color token needs both a light and a dark value.
+- Forms: wrap fields in `ActionForm` (`useActionState`). Actions throw `ValidationError` with a Thai message, and `handle()` returns `{ error, values }` so the form refills itself. Add/edit forms live in `FormModal`, opened by the URL (`?new=1` / `?edit=<id>`). Saving redirects to the list URL, which closes the modal.
+- Delete with `DeleteButton` (two-step confirm, no `confirm()` dialog). A new deletable table must be added to `DELETABLE` in `lib/data.ts`.
+- Shared pieces in `components/ui.tsx`: `PageHeader`, `Card`, `Stat`, `Field`, `PortfolioSelect`, `PortfolioTabs`, `NewButton`, `RowActions`, `Money`, `AssetBadge`, `EmptyRow`, `pickPortfolio`, `pickEdit`, `today`. Reuse them rather than restyling by hand.
+- Tables use `.table`, with `.num` for numeric cells. `RowActions` in the last column is sticky to the right edge. `.icon-btn` must stay `position: relative`: otherwise its `sr-only` label escapes the table's scroll box and widens the whole page on mobile.
+- Format with `lib/format.ts`: `fmt`, `fmtPct`, `fmtSigned`, `fmtPrice` (trims trailing zeros), `fmtQty`, `fmtDate` (dd/mm/yyyy, as in the old sheet).
+- Keep pages compact: the owner works on a MacBook (about 1470×920). Charts are about 180px tall and stat tiles are short. The layout is capped at 2400px with a `w-56` sidebar. Check that new tables fit at 1470px without hiding columns behind the sticky action column.
+- Charts: one value axis (never dual-axis), a legend whenever color means something, direct labels only on a few notable values, and a hover/focus tooltip on every column. The cash-flow chart shows paired columns, deposits (green) next to withdrawals (red), which the owner chose over stacked or diverging variants.
+- Emoji and icons are part of the look (the owner asked for them). Keep emoji in headers, stat tiles and empty states consistent with existing pages.
+
+## Verifying UI changes
+
+- `next dev` allows only **one instance per project folder**, and the owner usually has one running on :3000. **Do not kill it.**
+- Use a copy of the data instead:
+  ```bash
+  node scripts/make-test-db.mjs          # writes data/test.db, prints a throwaway login for user 1
+  npm run build
+  DATABASE_PATH=data/test.db npx next start -p 3001
+  ```
+  Open http://localhost:3001, check the change in **light and dark** themes and at **1470px and phone width**, then stop the server and delete `data/test.db*`.
+- Full-page loads in dev mode take a few seconds to hydrate, so wait before concluding something is broken. Clicks dispatched from injected JS may not reach React; use real clicks.
+- `.claude/launch.json` points at an absolute nvm Node path because the preview launcher does not load nvm.
+
+## Importing from the old spreadsheet (only when asked)
+
+The owner sends screenshots of Google Sheets tabs. To import:
+1. Check which user and portfolio they belong to, and that no rows already exist in that date range (avoid duplicates).
+2. Insert in one transaction with a small `better-sqlite3` script, using the exact amounts from the sheet. If a sheet's total disagrees with shares × price, keep the total and note it in the row.
+3. Skip dividend re-deposit rows ("เงินจากกำไรปันผล"). Import sale proceeds ("เงินจากกำไรขายหุ้น …") as deposits unless the owner says otherwise.
+4. Compare yearly totals with the sheet's own summary and report any differences and assumptions, such as a missing or obviously mistyped date.

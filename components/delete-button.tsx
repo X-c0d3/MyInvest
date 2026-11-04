@@ -6,13 +6,26 @@ import { deleteAction } from "@/app/actions";
 import type { DeletableTable } from "@/lib/data";
 
 /** Two-step delete: the first click arms it, the second confirms. */
-export function DeleteButton({ table, id, label }: { table: DeletableTable; id: number; label: string }) {
+export function DeleteButton({
+  table,
+  id,
+  label,
+}: {
+  table: DeletableTable;
+  id: number;
+  label: string;
+}) {
   const [armed, setArmed] = useState(false);
   const [pending, startTransition] = useTransition();
 
   if (!armed) {
     return (
-      <button type="button" className="icon-btn hover:!bg-neg-soft hover:!text-neg" title="ลบ" onClick={() => setArmed(true)}>
+      <button
+        type="button"
+        className="icon-btn hover:!bg-neg-soft hover:!text-neg"
+        title="ลบ"
+        onClick={() => setArmed(true)}
+      >
         <Trash2 className="size-4" />
         <span className="sr-only">ลบ</span>
       </button>
@@ -28,7 +41,12 @@ export function DeleteButton({ table, id, label }: { table: DeletableTable; id: 
       >
         {pending ? "กำลังลบ…" : "ยืนยันลบ"}
       </button>
-      <button type="button" disabled={pending} className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-subtle" onClick={() => setArmed(false)}>
+      <button
+        type="button"
+        disabled={pending}
+        className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-subtle"
+        onClick={() => setArmed(false)}
+      >
         ยกเลิก
       </button>
     </span>

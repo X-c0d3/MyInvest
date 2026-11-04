@@ -14,7 +14,14 @@ type Props = {
 };
 
 /** Form shell shared by every entity: shows validation errors and pending state. Fields come from the server. */
-export function ActionForm({ action, children, editId, cancelHref, submitLabel, className }: Props) {
+export function ActionForm({
+  action,
+  children,
+  editId,
+  cancelHref,
+  submitLabel,
+  className,
+}: Props) {
   const [state, formAction, pending] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -24,24 +31,38 @@ export function ActionForm({ action, children, editId, cancelHref, submitLabel, 
     if (!form || !state.values) return;
     for (const [name, value] of Object.entries(state.values)) {
       const field = form.elements.namedItem(name);
-      if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) field.value = value;
+      if (
+        field instanceof HTMLInputElement ||
+        field instanceof HTMLSelectElement
+      )
+        field.value = value;
     }
   }, [state]);
 
   return (
-    <form ref={formRef} action={formAction} className={className ?? "grid gap-3 sm:grid-cols-2 lg:grid-cols-4"}>
+    <form
+      ref={formRef}
+      action={formAction}
+      className={className ?? "grid gap-4 sm:grid-cols-2"}
+    >
       {editId ? <input type="hidden" name="id" value={editId} /> : null}
       {children}
       <div className="col-span-full flex flex-wrap items-center gap-3">
         <button type="submit" disabled={pending} className="btn-primary">
-          {pending ? "กำลังบันทึก…" : (submitLabel ?? (editId ? "บันทึกการแก้ไข" : "เพิ่มรายการ"))}
+          {pending
+            ? "กำลังบันทึก…"
+            : (submitLabel ?? (editId ? "บันทึกการแก้ไข" : "เพิ่มรายการ"))}
         </button>
-        {editId && cancelHref ? (
-          <Link href={cancelHref} className="btn-ghost">
+        {cancelHref ? (
+          <Link href={cancelHref} replace scroll={false} className="btn-ghost">
             ยกเลิก
           </Link>
         ) : null}
-        {state.error ? <p className="rounded-lg bg-neg-soft px-3 py-1.5 text-sm text-neg">⚠️ {state.error}</p> : null}
+        {state.error ? (
+          <p className="rounded-lg bg-neg-soft px-3 py-1.5 text-sm text-neg">
+            ⚠️ {state.error}
+          </p>
+        ) : null}
       </div>
     </form>
   );

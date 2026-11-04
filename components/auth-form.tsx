@@ -15,7 +15,10 @@ const FEATURES = [
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const isLogin = mode === "login";
-  const [state, formAction, pending] = useActionState<AuthState, FormData>(isLogin ? login : register, {});
+  const [state, formAction, pending] = useActionState<AuthState, FormData>(
+    isLogin ? login : register,
+    {},
+  );
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -32,59 +35,97 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           <ul className="mt-8 space-y-4 text-white/90">
             {FEATURES.map(([emoji, text]) => (
               <li key={text} className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-white/15 text-xl backdrop-blur">{emoji}</span>
+                <span className="flex size-10 items-center justify-center rounded-xl bg-white/15 text-xl backdrop-blur">
+                  {emoji}
+                </span>
                 {text}
               </li>
             ))}
           </ul>
         </div>
-        <p className="relative text-sm text-white/70">บันทึกครั้งเดียว ระบบคำนวณให้ทุกอย่าง</p>
+        <p className="relative text-sm text-white/70">
+          บันทึกครั้งเดียว ระบบคำนวณให้ทุกอย่าง
+        </p>
       </div>
 
       <div className="relative flex items-center justify-center p-4">
         <div className="absolute top-4 right-4">
           <ThemeToggle />
         </div>
-      <form action={formAction} className="w-full max-w-sm space-y-5">
-        <div className="space-y-6">
-          <Logo />
-          <div>
-            <h1 className="text-2xl font-bold">{isLogin ? "ยินดีต้อนรับกลับ 👋" : "เริ่มต้นใช้งาน 🚀"}</h1>
-            <p className="mt-1 text-sm text-muted">{isLogin ? "เข้าสู่ระบบเพื่อดูพอร์ตของคุณ" : "สร้างบัญชีใหม่ ใช้เวลาไม่ถึงนาที"}</p>
+        <form action={formAction} className="w-full max-w-sm space-y-5">
+          <div className="space-y-6">
+            <Logo />
+            <div>
+              <h1 className="text-2xl font-bold">
+                {isLogin ? "ยินดีต้อนรับกลับ 👋" : "เริ่มต้นใช้งาน 🚀"}
+              </h1>
+              <p className="mt-1 text-sm text-muted">
+                {isLogin
+                  ? "เข้าสู่ระบบเพื่อดูพอร์ตของคุณ"
+                  : "สร้างบัญชีใหม่ ใช้เวลาไม่ถึงนาที"}
+              </p>
+            </div>
           </div>
-        </div>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-muted">ชื่อผู้ใช้</span>
-          <input name="username" defaultValue={state.username} className="input" autoComplete="username" required autoFocus />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-muted">รหัสผ่าน</span>
-          <input
-            name="password"
-            type="password"
-            className="input"
-            autoComplete={isLogin ? "current-password" : "new-password"}
-            minLength={isLogin ? undefined : 8}
-            required
-          />
-        </label>
-        {!isLogin ? (
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-muted">ยืนยันรหัสผ่าน</span>
-            <input name="confirm" type="password" className="input" autoComplete="new-password" required />
+            <span className="font-medium text-muted">ชื่อผู้ใช้</span>
+            <input
+              name="username"
+              defaultValue={state.username}
+              className="input"
+              autoComplete="username"
+              required
+              autoFocus
+            />
           </label>
-        ) : null}
-        {state.error ? <p className="rounded-lg bg-neg-soft px-3 py-2 text-sm text-neg">⚠️ {state.error}</p> : null}
-        <button type="submit" disabled={pending} className="btn-primary w-full py-2.5">
-          {pending ? "กรุณารอสักครู่…" : isLogin ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
-        </button>
-        <p className="text-center text-sm text-muted">
-          {isLogin ? "ยังไม่มีบัญชี? " : "มีบัญชีแล้ว? "}
-          <Link href={isLogin ? "/register" : "/login"} className="text-accent hover:underline">
-            {isLogin ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
-          </Link>
-        </p>
-      </form>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-muted">รหัสผ่าน</span>
+            <input
+              name="password"
+              type="password"
+              className="input"
+              autoComplete={isLogin ? "current-password" : "new-password"}
+              minLength={isLogin ? undefined : 8}
+              required
+            />
+          </label>
+          {!isLogin ? (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-muted">ยืนยันรหัสผ่าน</span>
+              <input
+                name="confirm"
+                type="password"
+                className="input"
+                autoComplete="new-password"
+                required
+              />
+            </label>
+          ) : null}
+          {state.error ? (
+            <p className="rounded-lg bg-neg-soft px-3 py-2 text-sm text-neg">
+              ⚠️ {state.error}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={pending}
+            className="btn-primary w-full py-2.5"
+          >
+            {pending
+              ? "กรุณารอสักครู่…"
+              : isLogin
+                ? "เข้าสู่ระบบ"
+                : "สมัครสมาชิก"}
+          </button>
+          <p className="text-center text-sm text-muted">
+            {isLogin ? "ยังไม่มีบัญชี? " : "มีบัญชีแล้ว? "}
+            <Link
+              href={isLogin ? "/register" : "/login"}
+              className="text-accent hover:underline"
+            >
+              {isLogin ? "สมัครสมาชิก" : "เข้าสู่ระบบ"}
+            </Link>
+          </p>
+        </form>
       </div>
     </div>
   );
