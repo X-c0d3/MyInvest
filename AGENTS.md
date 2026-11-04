@@ -98,7 +98,15 @@ There is no test suite. Verify with type check, lint, build, and a look in the b
   ```
   Open http://localhost:3001, check the change in **light and dark** themes and at **1470px and phone width**, then stop the server and delete `data/test.db*`.
 - Full-page loads in dev mode take a few seconds to hydrate, so wait before concluding something is broken. Clicks dispatched from injected JS may not reach React; use real clicks.
-- `.claude/launch.json` points at an absolute nvm Node path because the preview launcher does not load nvm.
+- Start test servers from a shell. There is no `.claude/launch.json`, because the preview launcher does not load nvm and never started the app.
+
+## Deployment (Docker)
+
+- `next.config.ts` builds with `output: "standalone"`. `outputFileTracingExcludes` keeps `data/` out of the build, because the tracer follows the database path in `lib/db.ts`. **Never remove that exclude.**
+- In the `Dockerfile`, `npm ci --ignore-scripts` stops npm from compiling better-sqlite3 with node-gyp (prebuilt binaries ship in the package). The runtime stage copies the whole `node_modules/better-sqlite3`, because the tracer keeps only the build machine's binary.
+- `.dockerignore` must keep excluding `data`, `*.db*` and `.env*`, so real data and secrets never get baked into an image.
+- `docker-compose.yml`: the `app` service stores the database on the `myinvest-data` volume (`DATABASE_PATH=/app/data/myinvest.db`), and Caddy terminates HTTPS for `$DOMAIN`.
+- Runtime env: `ALLOW_REGISTRATION` (sign-up is otherwise open only while there are no users) and `COOKIE_SECURE` (defaults to secure in production).
 
 ## Importing from the old spreadsheet (only when asked)
 

@@ -10,6 +10,21 @@ const SESSION_DAYS = 30;
 
 export type User = { id: number; username: string; goalAmount: number };
 
+/** HTTPS-only session cookie in production; COOKIE_SECURE=false allows testing over plain http. */
+const cookieSecure = () =>
+  process.env.COOKIE_SECURE
+    ? process.env.COOKIE_SECURE === "true"
+    : process.env.NODE_ENV === "production";
+
+/**
+ * Sign-up is open only while there are no users (to create the owner's account),
+ * or when ALLOW_REGISTRATION=true. A public VPS should not let strangers register.
+ */
+export function registrationOpen() {
+  if (process.env.ALLOW_REGISTRATION === "true") return true;
+  return !getDb().prepare("SELECT 1 FROM users LIMIT 1").get();
+}
+
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(password, salt, 64);
@@ -43,7 +58,7 @@ export async function createSession(userId: number) {
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     path: "/",
     expires: new Date(expiresAt),
   });

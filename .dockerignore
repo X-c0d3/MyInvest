@@ -1,0 +1,24 @@
+# Never bake the owner's database (real financial data) or local secrets into an image.
+data
+*.db
+*.db-shm
+*.db-wal
+.env*
+!.env.example
+
+# Rebuilt inside the image
+node_modules
+.next
+*.tsbuildinfo
+
+# Not needed at runtime
+.git
+.claude
+README.md
+AGENTS.md
+CLAUDE.md
+Dockerfile
+docker-compose.yml
+Caddyfile
+npm-debug.log*
+.DS_Store

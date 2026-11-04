@@ -42,6 +42,58 @@ npm run dev
 
 ฐานข้อมูลอยู่ที่ `data/myinvest.db` (เปลี่ยนตำแหน่งได้ด้วย env `DATABASE_PATH`) สำรองข้อมูลได้ด้วยการ copy ไฟล์นี้ ถ้าต้องการเริ่มใหม่ให้ลบโฟลเดอร์ `data/`
 
+## Deploy บน VPS (Docker)
+
+มี `Dockerfile`, `docker-compose.yml` และ `Caddyfile` ให้พร้อม แอปรันด้วย user ที่ไม่ใช่ root ฐานข้อมูลเก็บใน Docker volume (`myinvest-data`) ข้อมูลจึงไม่หายตอนอัปเดต และ Caddy ทำ HTTPS ให้อัตโนมัติ
+
+### สิ่งที่ต้องมี
+- VPS ที่ติดตั้ง Docker และ Docker Compose แล้ว และเปิด port 80, 443
+- โดเมน (หรือ subdomain) ที่ตั้ง DNS record แบบ A ชี้มาที่ IP ของ VPS
+
+### ติดตั้งครั้งแรก
+```bash
+git clone <repo ของคุณ> myinvest && cd myinvest
+cp .env.example .env        # แก้ DOMAIN เป็นโดเมนของคุณ
+docker compose up -d --build
+```
+เปิด `https://<โดเมน>` แล้วสมัครบัญชีแรก หลังจากมีบัญชีแล้ว ระบบจะปิดรับสมัครเองโดยอัตโนมัติ ถ้าต้องการเพิ่มผู้ใช้ภายหลัง ให้ตั้ง `ALLOW_REGISTRATION=true` ใน `.env` แล้วรัน `docker compose up -d` จากนั้นตั้งกลับเป็น `false`
+
+### ย้ายข้อมูลจากเครื่องตัวเองขึ้น VPS
+```bash
+# บนเครื่องตัวเอง: สร้างสำเนาฐานข้อมูลที่สมบูรณ์ (ทำได้แม้ dev server ยังเปิดอยู่)
+node -e "require('better-sqlite3')('data/myinvest.db',{readonly:true}).backup('myinvest-upload.db')"
+scp myinvest-upload.db <user>@<vps>:~/myinvest/
+
+# บน VPS
+docker compose stop app
+docker compose cp myinvest-upload.db app:/app/data/myinvest.db
+docker compose run --rm --no-deps --user root --entrypoint chown app node:node /app/data/myinvest.db
+docker compose start app
+rm myinvest-upload.db
+```
+ตอนเปิดใช้งาน ระบบจะอัปเดต schema ของฐานข้อมูลให้เอง (migration)
+
+### อัปเดตเวอร์ชัน
+```bash
+git pull && docker compose up -d --build
+```
+
+### สำรองข้อมูลบน VPS
+```bash
+docker compose exec app node -e "require('/app/node_modules/better-sqlite3')('/app/data/myinvest.db',{readonly:true}).backup('/app/data/backup.db')"
+docker compose cp app:/app/data/backup.db ./myinvest-$(date +%F).db
+```
+แนะนำให้ตั้ง cron ไว้สำรองทุกวัน และเก็บไฟล์สำรองไว้นอก VPS ด้วย
+
+### ค่าใน `.env`
+| ตัวแปร | ค่าเริ่มต้น | ความหมาย |
+| --- | --- | --- |
+| `DOMAIN` | (ต้องใส่) | โดเมนที่ใช้เข้าเว็บ Caddy จะออกใบรับรอง HTTPS ให้ |
+| `ALLOW_REGISTRATION` | `false` | `true` = เปิดรับสมัครเสมอ ส่วน `false` = รับสมัครได้เฉพาะตอนที่ยังไม่มีผู้ใช้ |
+| `COOKIE_SECURE` | `true` | ส่ง cookie เข้าสู่ระบบผ่าน HTTPS เท่านั้น ตั้ง `false` เฉพาะตอนทดสอบผ่าน http |
+
+> ⚠️ ไม่แนะนำให้เปิดใช้ผ่าน `http://IP:3000` โดยตรง เพราะรหัสผ่านและข้อมูลการเงินจะส่งผ่านเน็ตแบบไม่เข้ารหัส ถ้ายังไม่มีโดเมน ให้ใช้ SSH tunnel แทน (`ssh -L 3000:localhost:3000 <vps>`) โดยเพิ่ม `ports: ["127.0.0.1:3000:3000"]` ให้ service `app` และตั้ง `COOKIE_SECURE=false`
+
 ## โครงสร้าง
 
 - `lib/db.ts`: เชื่อมต่อ SQLite และ schema
