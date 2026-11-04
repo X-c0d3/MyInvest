@@ -25,6 +25,9 @@ export type Portfolio = {
   currency: Currency;
   /** true: dividends are credited to portfolio cash; false: the broker pays them to a bank account. */
   dividendsToCash: boolean;
+  /** Cash at the broker as last entered by the owner (portfolio currency); null = not entered yet. */
+  cashBalance: number | null;
+  cashUpdatedAt: string | null;
   note: string;
 };
 
@@ -33,7 +36,7 @@ export type CashSource = "new" | "dividend" | "realized";
 export const CASH_SOURCES = ["new", "dividend", "realized"] as const;
 
 const PORTFOLIO_COLUMNS =
-  "id, name, kind, currency, dividends_to_cash AS dividendsToCash, note";
+  "id, name, kind, currency, dividends_to_cash AS dividendsToCash, cash_balance AS cashBalance, cash_updated_at AS cashUpdatedAt, note";
 type PortfolioRow = Omit<Portfolio, "dividendsToCash"> & {
   dividendsToCash: 0 | 1;
 };
@@ -80,6 +83,19 @@ export type Dividend = {
   xdDate: string | null;
   paidDate: string;
   note: string;
+};
+
+/** Opening position copied from the broker (ยอดยกมา): trades on or before asOf are already included. */
+export type Position = {
+  id: number;
+  portfolioId: number;
+  symbol: string;
+  assetType: AssetType;
+  quantity: number;
+  avgCost: number;
+  asOf: string;
+  /** Highest trade id when the snapshot was saved; same-day trades added later still count. */
+  coversTradeId: number;
 };
 
 export type Price = { symbol: string; price: number; updatedAt: string };
@@ -136,6 +152,14 @@ export const listFxRates = (userId: number) =>
     )
     .all(userId) as FxRate[];
 
+export const listPositions = (userId: number) =>
+  getDb()
+    .prepare(
+      `SELECT id, portfolio_id AS portfolioId, symbol, asset_type AS assetType, quantity, avg_cost AS avgCost, as_of AS asOf, covers_trade_id AS coversTradeId
+         FROM positions WHERE user_id = ? ORDER BY symbol`,
+    )
+    .all(userId) as Position[];
+
 export function getPortfolio(userId: number, portfolioId: number) {
   const row = getDb()
     .prepare(
@@ -150,7 +174,7 @@ export function getPortfolio(userId: number, portfolioId: number) {
 export function savePortfolio(
   userId: number,
   id: number | null,
-  p: Omit<Portfolio, "id">,
+  p: Omit<Portfolio, "id" | "cashBalance" | "cashUpdatedAt">,
 ) {
   if (id) {
     getDb()
@@ -298,6 +322,48 @@ export function saveFxRate(userId: number, currency: string, rate: number) {
      ON CONFLICT (user_id, currency) DO UPDATE SET rate = excluded.rate, updated_at = datetime('now')`,
     )
     .run(userId, currency, rate);
+}
+
+/** Owner-entered broker cash for one portfolio; null clears it. */
+export function saveCashBalance(
+  userId: number,
+  portfolioId: number,
+  amount: number | null,
+) {
+  getDb()
+    .prepare(
+      "UPDATE portfolios SET cash_balance = ?, cash_updated_at = CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END WHERE id = ? AND user_id = ?",
+    )
+    .run(amount, amount, portfolioId, userId);
+}
+
+/** Sets (or replaces) the opening position for one symbol in one portfolio. */
+export function savePosition(
+  userId: number,
+  p: Omit<Position, "id" | "coversTradeId">,
+) {
+  const db = getDb();
+  const { last } = db
+    .prepare(
+      "SELECT coalesce(max(id), 0) AS last FROM trades WHERE user_id = ?",
+    )
+    .get(userId) as { last: number };
+  db.prepare(
+    `INSERT INTO positions (user_id, portfolio_id, symbol, asset_type, quantity, avg_cost, as_of, covers_trade_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (user_id, portfolio_id, symbol) DO UPDATE SET
+       asset_type = excluded.asset_type, quantity = excluded.quantity, avg_cost = excluded.avg_cost,
+       as_of = excluded.as_of, covers_trade_id = excluded.covers_trade_id, updated_at = datetime('now')`,
+  ).run(
+    userId,
+    p.portfolioId,
+    p.symbol,
+    p.assetType,
+    p.quantity,
+    p.avgCost,
+    p.asOf,
+    last,
+  );
 }
 
 export function setGoal(userId: number, amount: number) {

@@ -6,6 +6,7 @@ import {
   listDividends,
   listFxRates,
   listPortfolios,
+  listPositions,
   listPrices,
   listTrades,
 } from "@/lib/data";
@@ -62,10 +63,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const trades = listTrades(user.id);
   const dividends = listDividends(user.id);
   const fx = buildFx(portfolios, cashflows, listFxRates(user.id));
-  const { holdings, realized } = computePositions(trades, listPrices(user.id));
+  const pos = computePositions(
+    trades,
+    listPrices(user.id),
+    listPositions(user.id),
+  );
+  const { realized } = pos;
 
   const summaries = portfolios.map((p) =>
-    summarizePortfolio(p, cashflows, trades, dividends, holdings, realized, fx),
+    summarizePortfolio(p, cashflows, trades, dividends, pos, fx),
   );
   const shown = current
     ? summaries.filter((s) => s.portfolio.id === current)
@@ -80,12 +86,37 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       | "unrealizedThb"
       | "reinvestedThb"
       | "dividendsOutsideThb"
+      | "untrackedThb"
       | "profitThb",
   ) => shown.reduce((s, x) => s + x[k], 0);
   const capital = sum("capitalThb");
   const value = sum("valueThb");
   const profit = sum("profitThb");
   const profitPct = capital > 0 ? (profit / capital) * 100 : 0;
+  // Portfolios with activity whose broker cash has not been entered yet (counted as 0).
+  const cashMissing = shown.filter(
+    (x) =>
+      !x.cashEntered &&
+      (x.capitalThb !== 0 || x.reinvestedThb !== 0 || x.costBasis !== 0),
+  );
+  // The per-portfolio table always lists every portfolio, so its total row sums all of them.
+  const tableCost = summaries.reduce((t, x) => t + x.costBasis * x.fxRate, 0);
+  const tableMarket = summaries.reduce(
+    (t, x) => t + x.holdingsValue * x.fxRate,
+    0,
+  );
+  const pastTrading = sum("realizedThb") + sum("untrackedThb");
+  // % helpers for the stat tiles: P/L against capital, unrealized against the holdings' cost.
+  const pctOf = (n: number, base: number) => (base > 0 ? (n / base) * 100 : 0);
+  const holdingsCost = shown.reduce((s, x) => s + x.costBasis * x.fxRate, 0);
+  const pctHint = (n: number, base: number, of: string) => (
+    <>
+      <span className={`font-semibold ${toneClass(n)}`}>
+        {fmtPct(pctOf(n, base))}
+      </span>{" "}
+      {of}
+    </>
+  );
 
   const inScope = <T extends { portfolioId: number }>(xs: T[]) =>
     current ? xs.filter((x) => x.portfolioId === current) : xs;
@@ -132,6 +163,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         <PortfolioTabs portfolios={portfolios} current={current} basePath="/" />
       </PageHeader>
 
+      {cashMissing.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-500/30 bg-warn-soft px-4 py-3 text-sm">
+          <span>
+            ⚠️ ยังไม่ได้ใส่ยอดเงินสดในโบรกของ{" "}
+            {cashMissing.map((x) => x.portfolio.name).join(", ")} ตอนนี้นับเป็น
+            0 มูลค่าพอร์ตและกำไรจะตรงกับความจริงเมื่อใส่ยอดจากแอปโบรก
+          </span>
+          <Link
+            href="/holdings"
+            className="font-semibold text-accent hover:underline"
+          >
+            ใส่เงินสดในโบรก →
+          </Link>
+        </div>
+      ) : null}
+
       {fx.missing.length > 0 ? (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-500/30 bg-warn-soft px-4 py-3 text-sm">
           <span>
@@ -165,11 +212,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            <span className="text-white/75">💰 เงินต้นจากกระเป๋า</span>
+            <span className="text-white/75">💰 เงินต้น (รวมทบต้น)</span>
             <span className="text-right font-semibold tabular-nums">
               {fmt(capital)}
             </span>
-            <span className="text-white/75">เงินสดในพอร์ต</span>
+            <span className="text-white/75">💵 เงินสดในโบรก</span>
             <span className="text-right font-semibold tabular-nums">
               {fmt(sum("cashThb"))}
             </span>
@@ -184,32 +231,44 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           emoji="🏦"
-          label="เงินต้นจากกระเป๋า (เงินใหม่ − ถอน)"
+          label="เงินต้น (รวมทบต้น)"
           value={fmt(capital)}
           hint={
             sum("reinvestedThb")
-              ? `ไม่รวมกำไรที่นำกลับมาลงทุน ${fmt(sum("reinvestedThb"), 0)}`
+              ? `รวมเงินทบต้น ${fmt(sum("reinvestedThb"), 0)}`
               : undefined
           }
         />
         <Stat
-          emoji="✅"
-          label="กำไรที่ขายแล้ว"
-          value={fmtSigned(sum("realizedThb"))}
-          tone={toneClass(sum("realizedThb"))}
+          emoji={pastTrading >= 0 ? "✅" : "📉"}
+          label="กำไร/ขาดทุนจากการขายหุ้นในอดีต"
+          value={fmtSigned(pastTrading)}
+          tone={toneClass(pastTrading)}
+          hint={pctHint(pastTrading, capital, "ของเงินต้น")}
         />
         <Stat
           emoji="⏳"
           label="กำไรที่ยังไม่ขาย"
           value={fmtSigned(sum("unrealizedThb"))}
           tone={toneClass(sum("unrealizedThb"))}
-          hint="ใส่ราคาล่าสุดที่หน้า หลักทรัพย์ที่ถือ"
+          hint={pctHint(
+            sum("unrealizedThb"),
+            holdingsCost,
+            "ของต้นทุนหุ้นที่ถือ",
+          )}
         />
         <Stat
           emoji="🎁"
           label="ปันผลสุทธิสะสม"
           value={fmt(sum("dividendsThb"))}
-          hint={`นำกลับมาลงทุนแล้ว ${fmt(sum("dividendsThb") - sum("dividendsOutsideThb"), 0)} · ยังอยู่นอกพอร์ต ${fmt(sum("dividendsOutsideThb"), 0)}`}
+          hint={
+            <>
+              <span className="font-semibold text-pos">
+                {fmtPct(pctOf(sum("dividendsThb"), capital))}
+              </span>{" "}
+              ของเงินต้น · ยังอยู่นอกพอร์ต {fmt(sum("dividendsOutsideThb"), 0)}
+            </>
+          }
         />
       </div>
 
@@ -282,7 +341,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                   />
                 ))}
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div
+                className={`mt-5 grid gap-3 sm:grid-cols-3 ${allocation.length > 3 ? "2xl:grid-cols-4" : ""}`}
+              >
                 {allocation.map((a) => (
                   <div
                     key={a.key}
@@ -314,7 +375,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       </div>
 
       <Card
-        title="แยกตามพอร์ต"
+        title="พอร์ตปัจจุบัน"
         icon={<Wallet className="size-5" />}
         className="mb-4"
       >
@@ -323,41 +384,77 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             <thead>
               <tr>
                 <th>พอร์ต</th>
-                <th className="num">เงินต้นจากกระเป๋า (฿)</th>
-                <th className="num">มูลค่า (สกุลพอร์ต)</th>
-                <th className="num">มูลค่า (฿)</th>
+                <th className="num">ต้นทุน (฿)</th>
+                <th className="num">มูลค่าตลาด (฿)</th>
                 <th className="num">กำไร/ขาดทุน (฿)</th>
+                <th className="num">💵 เงินสดในโบรก (฿)</th>
               </tr>
             </thead>
             <tbody>
               {summaries.length === 0 ? <EmptyRow cols={5} /> : null}
-              {summaries.map((s) => (
-                <tr key={s.portfolio.id}>
-                  <td className="font-medium">
-                    {portfolioEmoji(s.portfolio)} {s.portfolio.name}
-                    {s.portfolio.currency !== "THB" ? (
-                      <span className="ml-2 text-xs text-muted">
-                        @ {fmt(s.fxRate, 4)} ฿/{s.portfolio.currency}
+              {summaries.map((s) => {
+                const cost = s.costBasis * s.fxRate;
+                const market = s.holdingsValue * s.fxRate;
+                return (
+                  <tr key={s.portfolio.id}>
+                    <td className="font-medium">
+                      {portfolioEmoji(s.portfolio)} {s.portfolio.name}
+                      {s.portfolio.currency !== "THB" ? (
+                        <span className="ml-2 text-xs text-muted">
+                          @ {fmt(s.fxRate, 2)} ฿/{s.portfolio.currency}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="num">{fmt(cost)}</td>
+                    <td className="num font-medium">{fmt(market)}</td>
+                    <td
+                      className={`num font-semibold ${toneClass(s.unrealizedThb)}`}
+                    >
+                      {fmtSigned(s.unrealizedThb)}{" "}
+                      <span className="text-xs">
+                        ({fmtPct(cost > 0 ? (s.unrealizedThb / cost) * 100 : 0)}
+                        )
                       </span>
-                    ) : null}
-                  </td>
-                  <td className="num">{fmt(s.capitalThb)}</td>
-                  <td className="num">
-                    {fmt(s.value)}{" "}
-                    <span className="text-xs text-muted">
-                      {s.portfolio.currency}
+                    </td>
+                    <td className="num text-muted">
+                      {s.cashEntered ? fmt(s.cashThb) : "ยังไม่ได้ใส่"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {summaries.length > 1 ? (
+              <tfoot>
+                <tr className="font-semibold">
+                  <td className="px-3 py-2.5">รวม</td>
+                  <td className="num px-3 py-2.5">{fmt(tableCost)}</td>
+                  <td className="num px-3 py-2.5">{fmt(tableMarket)}</td>
+                  <td
+                    className={`num px-3 py-2.5 ${toneClass(tableMarket - tableCost)}`}
+                  >
+                    {fmtSigned(tableMarket - tableCost)}{" "}
+                    <span className="text-xs">
+                      (
+                      {fmtPct(
+                        tableCost > 0
+                          ? ((tableMarket - tableCost) / tableCost) * 100
+                          : 0,
+                      )}
+                      )
                     </span>
                   </td>
-                  <td className="num font-medium">{fmt(s.valueThb)}</td>
-                  <td className={`num ${toneClass(s.profitThb)}`}>
-                    {fmtSigned(s.profitThb)}{" "}
-                    <span className="text-xs">({fmtPct(s.profitPct)})</span>
+                  <td className="num px-3 py-2.5 text-muted">
+                    {fmt(summaries.reduce((t, x) => t + x.cashThb, 0))}
                   </td>
                 </tr>
-              ))}
-            </tbody>
+              </tfoot>
+            ) : null}
           </table>
         </div>
+        <p className="mt-3 text-xs text-muted">
+          💡 ต้นทุน / มูลค่าตลาด / กำไร-ขาดทุน คิดแบบเดียวกับหน้า Portfolio
+          ในแอปโบรก · ยอดเงินฝาก-ถอนดูได้ที่หน้า ฝาก-ถอน
+        </p>
       </Card>
 
       <Card title="สรุปรายปี (บาท)" icon={<CalendarRange className="size-5" />}>
@@ -372,7 +469,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                 <th className="num">เงินเก็บสุทธิ</th>
                 <th className="num">ปันผลสุทธิ</th>
                 <th className="num">กำไรที่ขายแล้ว</th>
-                <th className="num">เงินต้นจากกระเป๋าสะสม</th>
+                <th className="num">เงินต้นสะสม</th>
                 <th className="num">ปันผล %</th>
                 <th className="num">ผลตอบแทน %</th>
               </tr>
@@ -386,7 +483,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                   <td className="num text-muted">
                     {y.deposit - y.fresh ? fmt(y.deposit - y.fresh) : "-"}
                   </td>
-                  <td className="num">
+                  <td className={`num ${y.withdraw ? "text-neg" : ""}`}>
                     {y.withdraw ? `(${fmt(y.withdraw)})` : "-"}
                   </td>
                   <td className={`num ${toneClass(y.netDeposit)}`}>
@@ -412,10 +509,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           </table>
         </div>
         <p className="mt-3 text-xs text-muted">
-          💡 เงินเก็บสุทธิ = เงินใหม่ − ถอน ·
-          กำไรที่ขายแล้วรวมกำไรขายที่บันทึกย้อนหลัง · ผลตอบแทน % =
-          (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นจากกระเป๋าสะสม ณ สิ้นปี ·
-          ไม่รวมกำไรที่ยังไม่ได้ขาย · สกุลเงินต่างประเทศแปลงด้วยอัตราปัจจุบัน
+          💡 เงินต้น = เงินใหม่ + เงินทบต้น − ถอน · ผลตอบแทน % = (กำไรที่ขายแล้ว
+          + ปันผลสุทธิ) ÷ เงินต้นสะสม ณ สิ้นปี · ไม่รวมกำไรที่ยังไม่ได้ขาย ·
+          สกุลเงินต่างประเทศแปลงด้วยอัตราปัจจุบัน
         </p>
       </Card>
     </>

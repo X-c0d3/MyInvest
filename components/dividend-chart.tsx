@@ -8,9 +8,12 @@ import { fmt, fmtPct } from "@/lib/format";
  */
 export function DividendChart({
   years,
+  capital,
   height = 180,
 }: {
   years: YearRow[];
+  /** Current capital of the paying portfolios; each year's % = that year's dividend ÷ this. */
+  capital: number;
   /** Plot height in px; kept compact so the page fits a laptop screen. */
   height?: number;
 }) {
@@ -29,14 +32,26 @@ export function DividendChart({
   const series = Array.from(
     { length: last - first + 1 },
     (_, i) => byYear.get(first + i) ?? null,
-  ).map((y, i) => ({
-    year: first + i,
-    net: y?.dividendNet ?? 0,
-    tax: y?.dividendTax ?? 0,
-    yieldPct: y && y.capital > 0 ? y.dividendYieldPct : null,
-  }));
+  )
+    .map((y, i) => ({
+      year: first + i,
+      net: y?.dividendNet ?? 0,
+      tax: y?.dividendTax ?? 0,
+    }))
+    // Change vs the previous year; null when there is nothing to compare against.
+    .map((s, i, all) => {
+      const prev = all[i - 1];
+      return {
+        ...s,
+        change:
+          prev && prev.net > 0 ? ((s.net - prev.net) / prev.net) * 100 : null,
+      };
+    });
 
-  const max = niceMax(Math.max(...series.map((s) => s.net)));
+  // Headroom so the labels above the tallest bar stay inside the plot.
+  const max = niceMax(Math.max(...series.map((s) => s.net)) * 1.25);
+  const pct = (net: number) =>
+    capital > 0 ? fmtPct((net / capital) * 100) : null;
   const best = series.reduce((a, b) => (b.net > a.net ? b : a));
   const latest = series[series.length - 1];
   const ticks = [max, max / 2, 0];
@@ -73,11 +88,7 @@ export function DividendChart({
           <div className="absolute inset-0 flex items-end gap-[2px]">
             {series.map((s, i) => {
               const h = (s.net / max) * 100;
-              const prev = series[i - 1];
-              const change =
-                prev && prev.net > 0
-                  ? ((s.net - prev.net) / prev.net) * 100
-                  : null;
+              const change = s.change;
               const labeled = s === best || s === latest;
               const tooltipSide = i < series.length / 2 ? "left-0" : "right-0";
               return (
@@ -92,10 +103,20 @@ export function DividendChart({
                     className="relative w-full max-w-12 rounded-t-[4px] bg-accent transition-[filter] group-hover:brightness-110"
                     style={{ height: `${h}%`, minHeight: s.net > 0 ? 2 : 0 }}
                   >
-                    {labeled ? (
-                      <span className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2 text-xs font-semibold whitespace-nowrap tabular-nums">
-                        {s === best ? "🏆 " : ""}
-                        {compact(s.net)}
+                    {/* % of capital on every bar; the amount only on the best and latest years */}
+                    {s.net > 0 ? (
+                      <span className="absolute bottom-full left-1/2 mb-1 flex -translate-x-1/2 flex-col items-center leading-tight whitespace-nowrap tabular-nums">
+                        {labeled ? (
+                          <span className="text-xs font-semibold">
+                            {s === best ? "🏆 " : ""}
+                            {compact(s.net)}
+                          </span>
+                        ) : null}
+                        {pct(s.net) ? (
+                          <span className="text-[11px] font-medium text-muted">
+                            {pct(s.net)}
+                          </span>
+                        ) : null}
                       </span>
                     ) : null}
                   </div>
@@ -112,10 +133,10 @@ export function DividendChart({
                       <dd className="text-right font-semibold">{fmt(s.net)}</dd>
                       <dt className="text-muted">ภาษีที่ถูกหัก</dt>
                       <dd className="text-right">{fmt(s.tax)}</dd>
-                      {s.yieldPct !== null ? (
+                      {capital > 0 ? (
                         <>
-                          <dt className="text-muted">เทียบเงินต้น</dt>
-                          <dd className="text-right">{fmtPct(s.yieldPct)}</dd>
+                          <dt className="text-muted">คิดเป็น % เงินต้น</dt>
+                          <dd className="text-right">{pct(s.net)}</dd>
                         </>
                       ) : null}
                       {change !== null ? (
@@ -147,6 +168,9 @@ export function DividendChart({
             </span>
           ))}
         </div>
+        <p className="mt-1 text-right text-[11px] text-muted">
+          % = ปันผลของปีนั้น ÷ เงินต้นปัจจุบัน {fmt(capital)} ฿
+        </p>
       </div>
     </div>
   );

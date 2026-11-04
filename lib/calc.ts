@@ -4,6 +4,7 @@ import type {
   Dividend,
   FxRate,
   Portfolio,
+  Position,
   Price,
   Trade,
 } from "./data";
@@ -84,13 +85,11 @@ export const cashflowThb = (c: Cashflow, fx: Fx) =>
 const signed = (c: Cashflow, n: number) => (c.type === "deposit" ? n : -n);
 
 /**
- * How a cashflow counts:
- *  - fresh deposit ('new') and every withdrawal move the owner's own capital (เงินต้นจากกระเป๋า);
- *  - 'dividend' deposits are dividends paid out to the bank and moved back in: cash, not capital, not a new return;
- *  - 'realized' deposits are back-dated sale profit: cash and a realized return, not capital.
- * Every cashflow moves portfolio cash.
+ * Capital (เงินต้น) is every deposit minus every withdrawal: the owner counts money moved back in
+ * (dividends, sale profit) as compounding capital (เงินทบต้น), as the old sheet did.
+ * `source` only says where a deposit came from: 'new' = fresh money, 'dividend' / 'realized' = compounding.
  */
-export const isCapital = (c: Cashflow) =>
+export const isFreshMoney = (c: Cashflow) =>
   c.type === "withdraw" || c.source === "new";
 
 // ---- positions ----
@@ -106,6 +105,8 @@ export type Holding = {
   marketValue: number;
   unrealized: number;
   unrealizedPct: number;
+  /** Date of the opening position this holding starts from, if any. */
+  asOf: string | null;
 };
 
 export type RealizedTrade = {
@@ -115,23 +116,56 @@ export type RealizedTrade = {
   pnl: number;
 };
 
+export type Positions = {
+  holdings: Holding[];
+  realized: RealizedTrade[];
+  /** Trades already contained in an opening position (dated on or before its asOf). */
+  skipped: Set<number>;
+  /** Cost of opening positions per portfolio (treated as a buy for the ledger). */
+  openingCost: Map<number, number>;
+};
+
 /**
- * Replays trades oldest-first using the average-cost method (as Thai brokers report).
+ * Builds holdings from opening positions (ยอดยกมา, copied from the broker) plus trades.
+ * Trades are replayed oldest-first using the average-cost method (as Thai brokers report);
+ * trades already contained in a symbol's opening position are skipped.
  * Buy fees are added to cost; sell fees are deducted from proceeds. Amounts stay in the portfolio's currency.
  */
-export function computePositions(trades: Trade[], prices: Price[]) {
+export function computePositions(
+  trades: Trade[],
+  prices: Price[],
+  openings: Position[] = [],
+): Positions {
   const priceMap = new Map(prices.map((p) => [p.symbol, p.price]));
-  const positions = new Map<
-    string,
-    {
-      portfolioId: number;
-      symbol: string;
-      assetType: AssetType;
-      qty: number;
-      cost: number;
-    }
-  >();
+  type Pos = {
+    portfolioId: number;
+    symbol: string;
+    assetType: AssetType;
+    qty: number;
+    cost: number;
+    asOf: string | null;
+    coversTradeId: number;
+  };
+  const positions = new Map<string, Pos>();
   const realized: RealizedTrade[] = [];
+  const skipped = new Set<number>();
+  const openingCost = new Map<number, number>();
+
+  for (const o of openings) {
+    positions.set(`${o.portfolioId}:${o.symbol}`, {
+      portfolioId: o.portfolioId,
+      symbol: o.symbol,
+      assetType: o.assetType,
+      qty: o.quantity,
+      cost: o.quantity * o.avgCost,
+      asOf: o.asOf,
+      coversTradeId: o.coversTradeId,
+    });
+    openingCost.set(
+      o.portfolioId,
+      (openingCost.get(o.portfolioId) ?? 0) + o.quantity * o.avgCost,
+    );
+  }
 
   const ordered = [...trades].sort(
     (a, b) => a.date.localeCompare(b.date) || a.id - b.id,
@@ -144,7 +178,17 @@ export function computePositions(trades: Trade[], prices: Price[]) {
       assetType: t.assetType,
       qty: 0,
       cost: 0,
+      asOf: null,
+      coversTradeId: 0,
     };
+    // Already inside the opening position: anything dated before it, or same-day trades that existed when it was saved.
+    if (
+      pos.asOf &&
+      (t.date < pos.asOf || (t.date === pos.asOf && t.id <= pos.coversTradeId))
+    ) {
+      skipped.add(t.id);
+      continue;
+    }
     pos.assetType = t.assetType;
     if (t.side === "buy") {
       pos.qty += t.quantity;
@@ -186,10 +230,11 @@ export function computePositions(trades: Trade[], prices: Price[]) {
         marketValue,
         unrealized,
         unrealizedPct: p.cost > 0 ? (unrealized / p.cost) * 100 : 0,
+        asOf: p.asOf,
       };
     });
 
-  return { holdings, realized };
+  return { holdings, realized, skipped, openingCost };
 }
 
 // ---- yearly summary (THB) ----
@@ -205,16 +250,16 @@ export type YearRow = {
   /** Back-dated sale profit recorded as deposits ('realized'). */
   reinvestedRealized: number;
   withdraw: number;
-  /** เงินเก็บสุทธิ: fresh − withdraw (change in own capital). */
+  /** เงินเก็บสุทธิ: all deposits − withdrawals (change in capital). */
   netDeposit: number;
   dividendNet: number;
   dividendTax: number;
-  /** Realized trade P/L plus back-dated sale profit. */
+  /** Realized P/L of recorded trades. */
   realized: number;
-  /** เงินต้นจากกระเป๋าสะสม ณ สิ้นปี */
+  /** เงินต้นสะสม (รวมทบต้น) ณ สิ้นปี */
   capital: number;
   dividendYieldPct: number;
-  /** (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นจากกระเป๋าสะสม ณ สิ้นปี */
+  /** (กำไรที่ขายแล้ว + ปันผลสุทธิ) ÷ เงินต้นสะสม (รวมทบต้น) ณ สิ้นปี */
   returnPct: number;
 };
 
@@ -258,10 +303,8 @@ export function yearlySummary(
     }
     r.deposit += thb;
     if (c.source === "dividend") r.reinvestedDividend += thb;
-    else if (c.source === "realized") {
-      r.reinvestedRealized += thb;
-      r.realized += thb;
-    } else r.fresh += thb;
+    else if (c.source === "realized") r.reinvestedRealized += thb;
+    else r.fresh += thb;
   }
   for (const d of dividends) {
     const r = row(yearOf(d.paidDate));
@@ -275,7 +318,7 @@ export function yearlySummary(
   return [...rows.values()]
     .sort((a, b) => a.year - b.year)
     .map((r) => {
-      r.netDeposit = r.fresh - r.withdraw;
+      r.netDeposit = r.deposit - r.withdraw;
       capital += r.netDeposit;
       r.capital = capital;
       r.dividendYieldPct = capital > 0 ? (r.dividendNet / capital) * 100 : 0;
@@ -300,36 +343,46 @@ export type PortfolioSummary = {
   realized: number;
   unrealized: number;
   /** THB */
-  /** เงินต้นจากกระเป๋า: fresh deposits − withdrawals (baht actually transferred). */
+  /** เงินต้น (รวมทบต้น): all deposits − withdrawals (baht actually transferred). */
   capitalThb: number;
   /** Dividends and back-dated sale profit moved back into the portfolio. */
   reinvestedThb: number;
   /** Net dividends still outside the portfolio (paid to the bank and not moved back in). */
   dividendsOutsideThb: number;
+  /** Cash at the broker as entered by the owner (0 until entered). */
   cashThb: number;
+  cashEntered: boolean;
+  /** Cash implied by the recorded deposits and trades (what the app would expect at the broker). */
+  ledgerCashThb: number;
+  /**
+   * Actual cash − ledger cash: results of trades that were never recorded (the owner entered only
+   * current holdings), usually a past trading loss. Part of the profit, shown separately.
+   */
+  untrackedThb: number;
   valueThb: number;
   dividendsThb: number;
   realizedThb: number;
   unrealizedThb: number;
-  /** มูลค่าวันนี้ + ปันผลที่ยังอยู่นอกพอร์ต − เงินต้นจากกระเป๋า (รวมผลจากค่าเงินด้วย) */
+  /** มูลค่าวันนี้ + ปันผลที่ยังอยู่นอกพอร์ต − เงินต้น (รวมทบต้น) (รวมผลจากค่าเงินด้วย) */
   profitThb: number;
   profitPct: number;
   byAssetThb: Record<AssetType, number>;
 };
 
 /**
- * มูลค่าพอร์ต = เงินสดคงเหลือ + มูลค่าหลักทรัพย์ (ราคาล่าสุด หรือราคาทุนถ้ายังไม่ได้ใส่ราคา).
- * Cash includes every deposit, and dividends only when the broker credits them to the portfolio.
+ * มูลค่าพอร์ต = เงินสดในโบรก (ที่ผู้ใช้กรอก) + มูลค่าหลักทรัพย์ (ราคาล่าสุด หรือราคาทุนถ้ายังไม่ได้ใส่ราคา).
+ * Ledger cash (every deposit, dividends only when credited to the portfolio, minus buys plus sells)
+ * is kept for comparison: with an incomplete trade history it is not real money.
  */
 export function summarizePortfolio(
   portfolio: Portfolio,
   cashflows: Cashflow[],
   trades: Trade[],
   dividends: Dividend[],
-  holdings: Holding[],
-  realized: RealizedTrade[],
+  pos: Positions,
   fx: Fx,
 ): PortfolioSummary {
+  const { holdings, realized } = pos;
   const own = <T extends { portfolioId: number }>(xs: T[]) =>
     xs.filter((x) => x.portfolioId === portfolio.id);
   const myCashflows = own(cashflows);
@@ -340,7 +393,7 @@ export function summarizePortfolio(
   const native = (c: Cashflow) => c.amount;
   const thb = (c: Cashflow) => cashflowThb(c, fx);
 
-  const capitalFlows = myCashflows.filter(isCapital);
+  const capitalFlows = myCashflows;
   const dividendBack = myCashflows.filter(
     (c) => c.type === "deposit" && c.source === "dividend",
   );
@@ -353,20 +406,25 @@ export function summarizePortfolio(
   const cashIn = sum(myCashflows, native);
   const divs = own(dividends).reduce((s, d) => s + dividendNet(d), 0);
   const dividendsBack = sum(dividendBack, native);
-  const tradeCash = own(trades).reduce(
-    (s, t) =>
-      s +
-      (t.side === "buy"
-        ? -(t.quantity * t.price + t.fee)
-        : t.quantity * t.price - t.fee),
-    0,
-  );
-  const cash = cashIn + (portfolio.dividendsToCash ? divs : 0) + tradeCash;
+  const tradeCash =
+    -(pos.openingCost.get(portfolio.id) ?? 0) +
+    own(trades)
+      .filter((t) => !pos.skipped.has(t.id))
+      .reduce(
+        (s, t) =>
+          s +
+          (t.side === "buy"
+            ? -(t.quantity * t.price + t.fee)
+            : t.quantity * t.price - t.fee),
+        0,
+      );
+  const ledgerCash =
+    cashIn + (portfolio.dividendsToCash ? divs : 0) + tradeCash;
+  const cash = portfolio.cashBalance ?? 0;
   const holdingsValue = myHoldings.reduce((s, h) => s + h.marketValue, 0);
   const costBasis = myHoldings.reduce((s, h) => s + h.costBasis, 0);
   const value = cash + holdingsValue;
-  const realizedSum =
-    own(realized).reduce((s, r) => s + r.pnl, 0) + sum(realizedBack, native);
+  const realizedSum = own(realized).reduce((s, r) => s + r.pnl, 0);
   const dividendsOutside = portfolio.dividendsToCash ? 0 : divs - dividendsBack;
   const valueThb = value * rate;
   const dividendsOutsideThb = dividendsOutside * rate;
@@ -390,6 +448,9 @@ export function summarizePortfolio(
     reinvestedThb: sum(dividendBack, thb) + sum(realizedBack, thb),
     dividendsOutsideThb,
     cashThb: cash * rate,
+    cashEntered: portfolio.cashBalance !== null,
+    ledgerCashThb: ledgerCash * rate,
+    untrackedThb: (cash - ledgerCash) * rate,
     valueThb,
     dividendsThb: divs * rate,
     realizedThb: realizedSum * rate,

@@ -9,7 +9,7 @@ export type FlowSeries = {
 };
 export type FlowYear = {
   year: number;
-  /** Running own capital (THB, fresh − withdrawals) at year end across the shown portfolios. */
+  /** Running capital (THB, all deposits − withdrawals) at year end across the shown portfolios. */
   capital: number;
   /** Per portfolio: fresh money in, returns moved back in, and withdrawals (THB). */
   parts: Record<number, { fresh: number; reinvest: number; withdraw: number }>;
@@ -220,19 +220,15 @@ export function CashflowChart({
                         <p className="text-muted">ไม่มีรายการ</p>
                       )}
                       <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-line pt-2 tabular-nums">
-                        <dt className="text-muted">
-                          เงินเก็บสุทธิ (ใหม่ − ถอน)
-                        </dt>
+                        <dt className="text-muted">สุทธิ (ฝาก − ถอน)</dt>
                         <dd
-                          className={`text-right font-semibold ${c.fresh - c.withdraw < 0 ? "text-neg" : "text-pos"}`}
+                          className={`text-right font-semibold ${c.deposit - c.withdraw < 0 ? "text-neg" : "text-pos"}`}
                         >
-                          {fmtSigned(c.fresh - c.withdraw)}
+                          {fmtSigned(c.deposit - c.withdraw)}
                         </dd>
                         {c.capital !== null ? (
                           <>
-                            <dt className="text-muted">
-                              เงินต้นจากกระเป๋าสะสม
-                            </dt>
+                            <dt className="text-muted">เงินต้นสะสม</dt>
                             <dd className="text-right">{fmt(c.capital)}</dd>
                           </>
                         ) : null}

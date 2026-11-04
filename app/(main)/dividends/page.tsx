@@ -67,6 +67,15 @@ export default async function DividendsPage({
   const reinvested = cashflows
     .filter((c) => c.type === "deposit" && c.source === "dividend")
     .reduce((s, c) => s + cashflowThb(c, fx), 0);
+  // Current capital (deposits − withdrawals) of the portfolios that pay these dividends,
+  // the base the owner's sheet uses for "คิดเป็น %" on every year.
+  const payingIds = new Set(rows.map((d) => d.portfolioId));
+  const capitalBase = cashflows
+    .filter((c) => payingIds.has(c.portfolioId))
+    .reduce(
+      (s, c) => s + (c.type === "deposit" ? 1 : -1) * cashflowThb(c, fx),
+      0,
+    );
   const totalTax = rows.reduce(
     (s, d) => s + dividendTax(d) * fx.rateOf(d.portfolioId),
     0,
@@ -202,7 +211,7 @@ export default async function DividendsPage({
               ))}
             </div>
           ) : null}
-          <DividendChart years={years} />
+          <DividendChart years={years} capital={capitalBase} />
         </Card>
 
         <Card

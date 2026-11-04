@@ -67,13 +67,14 @@ There is no test suite. Verify with type check, lint, build, and a look in the b
 - Read `node_modules/next/dist/docs/` before using an API you have not used in this repo.
 
 ### Money and calculations (`lib/calc.ts`)
-- Average-cost method: buy fees are added to cost, and sell fees come out of proceeds.
+- **Holdings start from opening positions (`positions` table, ยอดยกมา):** the owner copies quantity and average cost from the broker app on the holdings page. Trades the snapshot already covers (dated before `as_of`, or same day with `id <= covers_trade_id`) are skipped and marked "รวมในยอดหุ้นแล้ว" on the trades page. Later trades apply on top, using the average-cost method: buy fees are added to cost, and sell fees come out of proceeds.
+- Keep the UI simple. The owner found ledger/gap breakdowns confusing, so show plain numbers (quantity, average cost, price, value, P/L) and avoid internal terms.
 - Dividend gross = shares × dividend per share. `tax_rate` is a per-row % (Thai stocks are usually 10%, US 15%, and some rows differ).
 - **Where money really goes (owner's setup):** sale proceeds stay in the portfolio as cash, but Thai brokers pay **dividends out to a bank account**. Each portfolio's `dividends_to_cash` says which applies; with 0 (the default) dividends do **not** add to portfolio cash.
-- Every deposit has a `source`: `new` = fresh money from the owner's pocket (**capital**), `dividend` = a dividend moved back in (cash only: the dividend was already counted as a return), `realized` = back-dated sale profit the old sheet logged as a deposit (cash and a realized return, not capital). Withdrawals always reduce capital. Use `isCapital()` from `lib/calc.ts`.
-- เงินต้นจากกระเป๋า (own capital) = `new` deposits − withdrawals. Total profit = portfolio value + dividends still outside the portfolio − own capital. Yearly return % = (realized P/L incl. `realized` deposits + net dividends) ÷ cumulative own capital at year end.
+- Every deposit has a `source`: `new` = fresh money, `dividend` = a dividend moved back in, `realized` = sale profit moved back in. **Capital (เงินต้น) = all deposits − withdrawals**: the owner counts money moved back in as compounding capital (เงินทบต้น), as the old sheet did. `source` is used only to show the fresh vs compounding split (`isFreshMoney()`).
+- Total profit = portfolio value + dividends still outside the portfolio (paid out and not moved back in) − capital. Yearly return % = (realized P/L + net dividends) ÷ cumulative capital at year end.
 - Each portfolio has a currency, and amounts are stored in that currency. `cashflows.amount_thb` is the baht actually transferred (equal to `amount` for THB portfolios). `buildFx()` converts totals to THB using the owner's rate from `fx_rates`, or else the average rate implied by their deposits.
-- Portfolio value = cash + holdings (latest price if set, otherwise cost).
+- Portfolio value = **cash at the broker as entered by the owner** (`portfolios.cash_balance`, 0 until entered) + holdings (latest price if set, otherwise cost). The owner entered only current holdings, not the full trade history, so cash derived from deposits − buys + sells ("ledger cash") is **not** real money. It is shown only for comparison. The gap `cash − ledger cash` is the result of unrecorded past trades (`untrackedThb`), counted with realized P/L on the dashboard.
 
 ### UI conventions
 - **Never hardcode portfolio names or ids.** Build tabs, filters and legends from `listPortfolios()`. Use `portfolioEmoji(p)` for the icon (🪙 for crypto, otherwise the currency flag). Use `seriesColor(index)` for chart color, where the index is the portfolio's position in the **full** portfolio list, so a portfolio keeps its color when filters change.

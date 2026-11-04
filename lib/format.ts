@@ -19,7 +19,7 @@ export const fmtQty = (n: number) =>
 export const fmtPrice = (n: number) =>
   new Intl.NumberFormat("th-TH", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: Math.abs(n) < 1 ? 6 : 4,
+    maximumFractionDigits: Math.abs(n) < 1 ? 6 : 5,
   }).format(n);
 
 export const fmtPct = (n: number) =>
@@ -89,16 +89,16 @@ export const CASH_SOURCE_LABEL: Record<
   new: {
     emoji: "💰",
     label: "เงินใหม่",
-    hint: "เงินจากกระเป๋า นับเป็นเงินต้น",
+    hint: "เงินจากกระเป๋า",
   },
   dividend: {
     emoji: "🎁",
     label: "ปันผลนำกลับ",
-    hint: "ปันผลที่โบรกโอนออก แล้วนำกลับมาลงทุน ไม่นับเป็นเงินต้น",
+    hint: "ปันผลที่โบรกโอนออก แล้วนำกลับมาลงทุน (ทบต้น)",
   },
   realized: {
     emoji: "📈",
     label: "กำไรขาย (ย้อนหลัง)",
-    hint: "กำไรขายหุ้นที่จดเป็นเงินฝากก่อนบันทึกการซื้อขาย นับเป็นกำไร ไม่นับเป็นเงินต้น",
+    hint: "กำไรจากการขายหุ้นที่นำกลับมาลงทุน (ทบต้น)",
   },
 };

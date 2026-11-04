@@ -1,6 +1,11 @@
 import { ListOrdered } from "lucide-react";
 import { requireUser } from "@/lib/auth";
-import { listPortfolios, listPrices, listTrades } from "@/lib/data";
+import {
+  listPortfolios,
+  listPositions,
+  listPrices,
+  listTrades,
+} from "@/lib/data";
 import { computePositions } from "@/lib/calc";
 import { saveTradeAction } from "@/app/actions";
 import {
@@ -43,7 +48,11 @@ export default async function TradesPage({
   const rows = current ? all.filter((t) => t.portfolioId === current) : all;
   const editing = all.find((t) => t.id === pickEdit(sp.edit));
   const portById = new Map(portfolios.map((p) => [p.id, p]));
-  const { realized } = computePositions(all, listPrices(user.id));
+  const { realized, skipped } = computePositions(
+    all,
+    listPrices(user.id),
+    listPositions(user.id),
+  );
   const pnlByTrade = new Map(realized.map((r) => [r.tradeId, r.pnl]));
   const defaultPort = portById.get(
     editing?.portfolioId ?? current ?? portfolios[0]?.id ?? 0,
@@ -200,17 +209,30 @@ export default async function TradesPage({
                 const total =
                   t.quantity * t.price + (t.side === "buy" ? t.fee : -t.fee);
                 return (
-                  <tr key={t.id}>
+                  <tr
+                    key={t.id}
+                    className={skipped.has(t.id) ? "text-muted" : undefined}
+                  >
                     <td>{fmtDate(t.date)}</td>
                     <td className="font-semibold">{t.symbol}</td>
                     <td>
                       <AssetBadge type={t.assetType} />
                     </td>
                     <td>
-                      <span
-                        className={`badge ${t.side === "buy" ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
-                      >
-                        {t.side === "buy" ? "BUY" : "SELL"}
+                      <span className="flex flex-col items-start gap-0.5">
+                        <span
+                          className={`badge ${t.side === "buy" ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
+                        >
+                          {t.side === "buy" ? "BUY" : "SELL"}
+                        </span>
+                        {skipped.has(t.id) ? (
+                          <span
+                            className="badge bg-subtle text-[10px] text-muted"
+                            title="รวมอยู่ในยอดหุ้นที่ปรับให้ตรงกับโบรกแล้ว (หน้าหลักทรัพย์ที่ถือ) จึงไม่นับซ้ำ"
+                          >
+                            รวมแล้ว
+                          </span>
+                        ) : null}
                       </span>
                     </td>
                     <td>
@@ -234,7 +256,14 @@ export default async function TradesPage({
                         </>
                       )}
                     </td>
-                    <td>{t.broker}</td>
+                    <td>
+                      <span
+                        className="block max-w-32 truncate"
+                        title={t.broker}
+                      >
+                        {t.broker}
+                      </span>
+                    </td>
                     <td>
                       <RowActions
                         href={`/trades?edit=${t.id}`}

@@ -16,7 +16,7 @@ import {
   listPortfolios,
   type Cashflow,
 } from "@/lib/data";
-import { buildFx, cashflowThb, isCapital, yearOf } from "@/lib/calc";
+import { buildFx, cashflowThb, isFreshMoney, yearOf } from "@/lib/calc";
 import { saveCashflowAction } from "@/app/actions";
 import {
   CASH_SOURCE_LABEL,
@@ -98,7 +98,6 @@ export default async function CashflowsPage({
   const reinvestDividend = total(byKind("dividend"));
   const reinvestRealized = total(byKind("realized"));
   const withdraw = total(byKind("withdraw"));
-  const ownCapital = fresh - withdraw;
 
   // ---- per portfolio; colors follow the portfolio's position among all portfolios ----
   const perPort = portfolios
@@ -116,7 +115,6 @@ export default async function CashflowsPage({
         fresh: f,
         reinvest: r,
         withdraw: w,
-        capital: f - w,
         /** เงินเข้าพอร์ตสุทธิ: everything moved in minus withdrawals. */
         netIn: f + r - w,
       };
@@ -147,7 +145,10 @@ export default async function CashflowsPage({
     yearMap.set(year, y);
   }
   const yearSaved = (y: FlowYear) =>
-    Object.values(y.parts).reduce((s, p) => s + p.fresh - p.withdraw, 0);
+    Object.values(y.parts).reduce(
+      (s, p) => s + p.fresh + p.reinvest - p.withdraw,
+      0,
+    );
   const years = [...yearMap.values()].sort((a, b) => a.year - b.year);
   let running = 0;
   for (const y of years) {
@@ -265,9 +266,9 @@ export default async function CashflowsPage({
         <Stat
           emoji={<Landmark className="size-5" />}
           iconClassName="bg-accent-soft text-accent"
-          label="เงินเข้าพอร์ตสุทธิ (ฝาก − ถอน) (฿)"
+          label="เงินต้น (ฝาก − ถอน) (฿)"
           value={fmt(netInTotal)}
-          hint={`💰 เงินต้นจากกระเป๋า ${fmt(ownCapital, 0)} · ใช้คำนวณกำไร %`}
+          hint="รวมเงินทบต้นแล้ว · ใช้คำนวณกำไร %"
         />
       </div>
 
@@ -287,10 +288,7 @@ export default async function CashflowsPage({
           <CashflowChart series={series} years={years} />
         </Card>
 
-        <Card
-          title="เงินเข้าพอร์ตแยกตามพอร์ต"
-          icon={<Wallet className="size-5" />}
-        >
+        <Card title="เงินต้นแยกตามพอร์ต" icon={<Wallet className="size-5" />}>
           {perPort.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">
               🌱 ยังไม่มีข้อมูล
@@ -337,9 +335,12 @@ export default async function CashflowsPage({
                     </span>
                     <span className="flex justify-between gap-2 text-xs text-muted tabular-nums">
                       <span>
-                        💰 เงินต้น {fmt(x.capital, 0)}
+                        💰 เงินใหม่ {fmt(x.fresh, 0)}
                         {x.reinvest ? (
-                          <span> · 🔁 นำกลับ {fmt(x.reinvest, 0)}</span>
+                          <span> · 🔁 ทบต้น {fmt(x.reinvest, 0)}</span>
+                        ) : null}
+                        {x.withdraw ? (
+                          <span> · ถอน −{fmt(x.withdraw, 0)}</span>
                         ) : null}
                       </span>
                       {netInTotal > 0 && perPort.length > 1 ? (
@@ -354,8 +355,8 @@ export default async function CashflowsPage({
             ))}
           </ul>
           <p className="mt-3 text-xs text-muted">
-            💡 ตัวเลขหลักคือเงินเข้าพอร์ตสุทธิ (เงินใหม่ + นำกลับมาลงทุน − ถอน)
-            · 💰 เงินต้น = เงินใหม่ − ถอน · 🔁 = กำไรที่นำกลับมาลงทุน
+            💡 เงินต้น = 💰 เงินใหม่ + 🔁 เงินทบต้น (ปันผล/กำไรที่นำกลับมาลงทุน)
+            − ถอน
           </p>
         </Card>
       </div>
@@ -394,7 +395,7 @@ export default async function CashflowsPage({
           <Field
             label="ที่มาของเงิน (เฉพาะรายการฝาก)"
             wide
-            hint="ปันผลที่นำกลับและกำไรขายย้อนหลัง ไม่นับเป็นเงินต้น เพื่อให้กำไร % ถูกต้อง"
+            hint="ใช้แยกให้เห็นว่าเงินก้อนไหนเป็นเงินใหม่ และก้อนไหนเป็นเงินทบต้น ทุกแบบนับเป็นเงินต้น"
           >
             <select
               name="source"
@@ -595,7 +596,7 @@ export default async function CashflowsPage({
                                 <span className="font-medium">
                                   {isDeposit ? "ฝาก" : "ถอน"}
                                 </span>
-                                {isDeposit && !isCapital(c) ? (
+                                {isDeposit && !isFreshMoney(c) ? (
                                   <span
                                     className="badge bg-accent-soft text-accent"
                                     title={src.hint}
@@ -619,7 +620,7 @@ export default async function CashflowsPage({
                               </td>
                             ) : null}
                             <td
-                              className={`num font-semibold ${isDeposit ? (isCapital(c) ? "text-pos" : "text-foreground") : "text-neg"}`}
+                              className={`num font-semibold ${isDeposit ? (isFreshMoney(c) ? "text-pos" : "text-foreground") : "text-neg"}`}
                             >
                               {isDeposit ? "+" : "−"}
                               <Money value={c.amount} currency={ccy} />

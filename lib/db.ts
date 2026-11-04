@@ -104,6 +104,26 @@ const MIGRATIONS = [
   //  - portfolios.dividends_to_cash: 0 = the broker pays dividends to a bank account (Thai brokers), 1 = into portfolio cash.
   `ALTER TABLE cashflows ADD COLUMN source TEXT NOT NULL DEFAULT 'new' CHECK (source IN ('new', 'dividend', 'realized'));
    ALTER TABLE portfolios ADD COLUMN dividends_to_cash INTEGER NOT NULL DEFAULT 0 CHECK (dividends_to_cash IN (0, 1));`,
+  // v3: cash actually sitting at the broker, entered by the owner (portfolio currency). The trade
+  // history is incomplete (only current holdings were entered), so cash cannot be derived from it.
+  `ALTER TABLE portfolios ADD COLUMN cash_balance REAL;
+   ALTER TABLE portfolios ADD COLUMN cash_updated_at TEXT;`,
+  // v4: opening positions (ยอดยกมา) copied from the broker: quantity and average cost as of a date.
+  // Trades that existed when it was saved (id <= covers_trade_id) and are dated on/before as_of, or any
+  // trade dated before as_of, are already inside the snapshot; everything else is applied on top.
+  `CREATE TABLE positions (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+     symbol       TEXT NOT NULL,
+     asset_type   TEXT NOT NULL DEFAULT 'stock' CHECK (asset_type IN ('stock', 'etf', 'crypto')),
+     quantity     REAL NOT NULL CHECK (quantity >= 0),
+     avg_cost     REAL NOT NULL CHECK (avg_cost >= 0),
+     as_of        TEXT NOT NULL,
+     covers_trade_id INTEGER NOT NULL DEFAULT 0,
+     updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+     UNIQUE (user_id, portfolio_id, symbol)
+   );`,
 ];
 
 function migrate(db: Database.Database) {

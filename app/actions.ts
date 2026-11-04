@@ -13,6 +13,8 @@ import {
   saveDividend,
   savePortfolio,
   savePrice,
+  savePosition,
+  saveCashBalance,
   saveTrade,
   setGoal,
   type DeletableTable,
@@ -166,14 +168,6 @@ export async function saveDividendAction(_: FormState, f: FormData) {
   });
 }
 
-export async function savePriceAction(_: FormState, f: FormData) {
-  return handle(f, "/holdings", (userId) => {
-    const symbol = str(f, "symbol").toUpperCase();
-    if (!symbol) throw new ValidationError("ไม่พบชื่อหลักทรัพย์");
-    savePrice(userId, symbol, num(f, "price", "ราคาล่าสุด"));
-  });
-}
-
 export async function saveFxRateAction(_: FormState, f: FormData) {
   return handle(f, "/portfolios", (userId) => {
     const currency = oneOf(f, "currency", CURRENCIES);
@@ -184,6 +178,35 @@ export async function saveFxRateAction(_: FormState, f: FormData) {
       currency,
       num(f, "rate", "อัตราแลกเปลี่ยน", { allowZero: false }),
     );
+  });
+}
+
+export async function saveCashBalanceAction(_: FormState, f: FormData) {
+  return handle(f, "/holdings", (userId) => {
+    const portfolio = portfolioField(f, userId);
+    // Empty clears the value, so the portfolio shows as "not entered" again.
+    const amount =
+      str(f, "cash") === "" ? null : num(f, "cash", "เงินสดในโบรก");
+    saveCashBalance(userId, portfolio.id, amount);
+  });
+}
+
+/** Sets a holding to what the broker shows (quantity + average cost), optionally with the latest price. */
+export async function savePositionAction(_: FormState, f: FormData) {
+  return handle(f, "/holdings", (userId) => {
+    const portfolio = portfolioField(f, userId);
+    const symbol = str(f, "symbol").toUpperCase();
+    if (!symbol) throw new ValidationError("กรุณาระบุชื่อหุ้น / เหรียญ");
+    savePosition(userId, {
+      portfolioId: portfolio.id,
+      symbol,
+      assetType: oneOf(f, "assetType", ["stock", "etf", "crypto"]),
+      quantity: num(f, "quantity", "จำนวน"),
+      avgCost: num(f, "avgCost", "ต้นทุนเฉลี่ย"),
+      asOf: new Date().toISOString().slice(0, 10),
+    });
+    if (str(f, "price") !== "")
+      savePrice(userId, symbol, num(f, "price", "ราคาล่าสุด"));
   });
 }
 
