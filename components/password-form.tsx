@@ -9,7 +9,7 @@ export function PasswordForm({ username }: { username: string }) {
     {},
   );
   return (
-    <form action={formAction} className="grid gap-3 sm:max-w-md">
+    <form action={formAction} className="grid gap-4">
       {/* Lets password managers attach the new password to the right account. */}
       <input
         type="text"
@@ -44,20 +44,24 @@ export function PasswordForm({ username }: { username: string }) {
           />
         </label>
       ))}
-      <div className="flex flex-wrap items-center gap-3">
+      {state.error ? (
+        <p className="rounded-xl bg-neg-soft px-3 py-2 text-sm text-neg">
+          ⚠️ {state.error}
+        </p>
+      ) : null}
+      {state.success ? (
+        <p className="rounded-xl bg-pos-soft px-3 py-2 text-sm text-pos">
+          {state.success}
+        </p>
+      ) : null}
+      <p className="rounded-xl bg-subtle px-3 py-2 text-sm text-muted">
+        💡 เปลี่ยนแล้ว อุปกรณ์อื่นจะถูกออกจากระบบ
+        ต้องเข้าสู่ระบบใหม่ด้วยรหัสใหม่
+      </p>
+      <div className="flex justify-end">
         <button type="submit" disabled={pending} className="btn-primary">
           {pending ? "กำลังบันทึก…" : "เปลี่ยนรหัสผ่าน"}
         </button>
-        {state.error ? (
-          <p className="rounded-lg bg-neg-soft px-3 py-1.5 text-sm text-neg">
-            ⚠️ {state.error}
-          </p>
-        ) : null}
-        {state.success ? (
-          <p className="rounded-lg bg-pos-soft px-3 py-1.5 text-sm text-pos">
-            {state.success}
-          </p>
-        ) : null}
       </div>
     </form>
   );
