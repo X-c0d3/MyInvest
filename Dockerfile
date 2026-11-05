@@ -37,7 +37,8 @@ COPY --from=build --chown=node:node /app/public ./public
 # image runs on either CPU architecture.
 COPY --from=build --chown=node:node /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 
-# The database lives on a volume; the app creates the file and runs migrations on first start.
+# The database lives in /app/data, which docker-compose bind-mounts from a host folder (DATA_DIR).
+# The app creates the file and runs migrations on first start.
 RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME ["/app/data"]
 

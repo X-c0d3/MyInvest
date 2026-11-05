@@ -46,7 +46,7 @@ npm run dev
 
 ## Deploy บน VPS (Docker)
 
-มี `Dockerfile`, `docker-compose.yml` และ `Caddyfile` ให้พร้อม แอปรันด้วย user ที่ไม่ใช่ root ฐานข้อมูลเก็บใน Docker volume (`myinvest-data`) ข้อมูลจึงไม่หายตอนอัปเดต แอปเปิดที่ **port 3004** ของ VPS
+มี `Dockerfile`, `docker-compose.yml` และ `Caddyfile` ให้พร้อม แอปรันด้วย user ที่ไม่ใช่ root ฐานข้อมูลเก็บในโฟลเดอร์ `data/` บนเครื่อง VPS (mount เข้า container) ข้อมูลจึงไม่หายตอนอัปเดต และสำรองได้แค่ copy โฟลเดอร์นี้ แอปเปิดที่ **port 3004** ของ VPS
 
 ### สิ่งที่ต้องมี
 - VPS ที่ติดตั้ง Docker และ Docker Compose แล้ว และเปิด port 3004 (หรือ port ของ reverse proxy ที่ใช้)
@@ -56,6 +56,7 @@ npm run dev
 ```bash
 git clone <repo ของคุณ> myinvest && cd myinvest
 cp .env.example .env
+mkdir -p data && sudo chown 1000:1000 data   # ให้ user ใน container (uid 1000) เขียนโฟลเดอร์นี้ได้
 docker compose up -d --build
 ```
 เปิด `http://<IP ของ VPS>:3004` (หรือโดเมนที่ proxy ชี้มา) แล้วสมัครบัญชีแรก หลังจากมีบัญชีแล้ว ระบบจะปิดรับสมัครเองโดยอัตโนมัติ ถ้าต้องการเพิ่มผู้ใช้ภายหลัง ให้ตั้ง `ALLOW_REGISTRATION=true` ใน `.env` แล้วรัน `docker compose up -d` จากนั้นตั้งกลับเป็น `false`
@@ -70,12 +71,12 @@ docker compose up -d --build
 node -e "require('better-sqlite3')('data/myinvest.db',{readonly:true}).backup('myinvest-upload.db')"
 scp myinvest-upload.db <user>@<vps>:~/myinvest/
 
-# บน VPS
+# บน VPS: วางไฟล์ไว้ในโฟลเดอร์ data/ ชื่อ myinvest.db
 docker compose stop app
-docker compose cp myinvest-upload.db app:/app/data/myinvest.db
-docker compose run --rm --no-deps --user root --entrypoint chown app node:node /app/data/myinvest.db
+mv myinvest-upload.db data/myinvest.db
+rm -f data/myinvest.db-wal data/myinvest.db-shm   # ไฟล์ค้างของฐานข้อมูลเดิมบน VPS (ถ้ามี)
+sudo chown 1000:1000 data/myinvest.db
 docker compose start app
-rm myinvest-upload.db
 ```
 ตอนเปิดใช้งาน ระบบจะอัปเดต schema ของฐานข้อมูลให้เอง (migration)
 
@@ -85,16 +86,17 @@ git pull && docker compose up -d --build
 ```
 
 ### สำรองข้อมูลบน VPS
+ฐานข้อมูลอยู่ที่ `data/` บนเครื่อง VPS ใช้คำสั่งนี้ได้แม้แอปเปิดอยู่ จะได้ไฟล์เดียวที่ข้อมูลครบ (รวม `-wal` แล้ว):
 ```bash
-docker compose exec app node -e "require('/app/node_modules/better-sqlite3')('/app/data/myinvest.db',{readonly:true}).backup('/app/data/backup.db')"
-docker compose cp app:/app/data/backup.db ./myinvest-$(date +%F).db
+docker compose exec app node -e "require('/app/node_modules/better-sqlite3')('/app/data/myinvest.db',{readonly:true}).backup('/app/data/backup-'+new Date().toISOString().slice(0,10)+'.db')"
 ```
-แนะนำให้ตั้ง cron ไว้สำรองทุกวัน และเก็บไฟล์สำรองไว้นอก VPS ด้วย
+ไฟล์ `data/backup-<วันที่>.db` จะอยู่บน VPS ทันที หรือถ้าหยุดแอปก่อน (`docker compose stop app`) จะ copy ทั้งโฟลเดอร์ `data/` ไปเก็บเลยก็ได้ แนะนำให้ตั้ง cron ไว้สำรองทุกวัน และเก็บไฟล์สำรองไว้นอก VPS ด้วย
 
 ### ค่าใน `.env`
 | ตัวแปร | ค่าเริ่มต้น | ความหมาย |
 | --- | --- | --- |
 | `APP_PORT` | `3004` | port บน VPS ที่เปิดให้เข้าแอป |
+| `DATA_DIR` | `./data` | โฟลเดอร์บน VPS ที่เก็บฐานข้อมูล |
 | `DOMAIN` | (ว่าง) | ใช้เฉพาะกับ `--profile caddy` โดเมนที่ Caddy จะออกใบรับรอง HTTPS ให้ |
 | `ALLOW_REGISTRATION` | `false` | `true` = เปิดรับสมัครเสมอ ส่วน `false` = รับสมัครได้เฉพาะตอนที่ยังไม่มีผู้ใช้ |
 | `COOKIE_SECURE` | `true` | ส่ง cookie เข้าสู่ระบบผ่าน HTTPS เท่านั้น ตั้ง `false` ถ้าเปิดผ่าน http ตรงๆ |
