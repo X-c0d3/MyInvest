@@ -26,7 +26,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000 \
+    PORT=3004 \
     HOSTNAME=0.0.0.0 \
     DATABASE_PATH=/app/data/myinvest.db
 
@@ -42,8 +42,8 @@ RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME ["/app/data"]
 
 USER node
-EXPOSE 3000
+EXPOSE 3004
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3004/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

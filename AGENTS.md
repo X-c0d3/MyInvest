@@ -106,8 +106,8 @@ There is no test suite. Verify with type check, lint, build, and a look in the b
 - `next.config.ts` builds with `output: "standalone"`. `outputFileTracingExcludes` keeps `data/` out of the build, because the tracer follows the database path in `lib/db.ts`. **Never remove that exclude.**
 - In the `Dockerfile`, `npm ci --ignore-scripts` stops npm from compiling better-sqlite3 with node-gyp (prebuilt binaries ship in the package). The runtime stage copies the whole `node_modules/better-sqlite3`, because the tracer keeps only the build machine's binary.
 - `.dockerignore` must keep excluding `data`, `*.db*` and `.env*`, so real data and secrets never get baked into an image.
-- `docker-compose.yml`: the `app` service stores the database on the `myinvest-data` volume (`DATABASE_PATH=/app/data/myinvest.db`), and Caddy terminates HTTPS for `$DOMAIN`.
-- Runtime env: `ALLOW_REGISTRATION` (sign-up is otherwise open only while there are no users) and `COOKIE_SECURE` (defaults to secure in production).
+- `docker-compose.yml`: the `app` service listens on **port 3004** (the owner deploys on that port; `APP_PORT` changes the host side) and stores the database on the `myinvest-data` volume (`DATABASE_PATH=/app/data/myinvest.db`). Caddy for HTTPS on `$DOMAIN` is optional and starts only with `--profile caddy`.
+- Runtime env: `ALLOW_REGISTRATION` (sign-up is otherwise open only while there are no users) and `COOKIE_SECURE` (defaults to secure in production; must be `false` when served over plain http, or login won't stick).
 
 ## Importing from the old spreadsheet (only when asked)
 

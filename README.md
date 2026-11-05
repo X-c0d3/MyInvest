@@ -46,19 +46,23 @@ npm run dev
 
 ## Deploy บน VPS (Docker)
 
-มี `Dockerfile`, `docker-compose.yml` และ `Caddyfile` ให้พร้อม แอปรันด้วย user ที่ไม่ใช่ root ฐานข้อมูลเก็บใน Docker volume (`myinvest-data`) ข้อมูลจึงไม่หายตอนอัปเดต และ Caddy ทำ HTTPS ให้อัตโนมัติ
+มี `Dockerfile`, `docker-compose.yml` และ `Caddyfile` ให้พร้อม แอปรันด้วย user ที่ไม่ใช่ root ฐานข้อมูลเก็บใน Docker volume (`myinvest-data`) ข้อมูลจึงไม่หายตอนอัปเดต แอปเปิดที่ **port 3004** ของ VPS
 
 ### สิ่งที่ต้องมี
-- VPS ที่ติดตั้ง Docker และ Docker Compose แล้ว และเปิด port 80, 443
-- โดเมน (หรือ subdomain) ที่ตั้ง DNS record แบบ A ชี้มาที่ IP ของ VPS
+- VPS ที่ติดตั้ง Docker และ Docker Compose แล้ว และเปิด port 3004 (หรือ port ของ reverse proxy ที่ใช้)
+- แนะนำให้มี HTTPS ด้านหน้า เช่น nginx / Caddy / Cloudflare ที่ชี้มาที่ `localhost:3004`
 
 ### ติดตั้งครั้งแรก
 ```bash
 git clone <repo ของคุณ> myinvest && cd myinvest
-cp .env.example .env        # แก้ DOMAIN เป็นโดเมนของคุณ
+cp .env.example .env
 docker compose up -d --build
 ```
-เปิด `https://<โดเมน>` แล้วสมัครบัญชีแรก หลังจากมีบัญชีแล้ว ระบบจะปิดรับสมัครเองโดยอัตโนมัติ ถ้าต้องการเพิ่มผู้ใช้ภายหลัง ให้ตั้ง `ALLOW_REGISTRATION=true` ใน `.env` แล้วรัน `docker compose up -d` จากนั้นตั้งกลับเป็น `false`
+เปิด `http://<IP ของ VPS>:3004` (หรือโดเมนที่ proxy ชี้มา) แล้วสมัครบัญชีแรก หลังจากมีบัญชีแล้ว ระบบจะปิดรับสมัครเองโดยอัตโนมัติ ถ้าต้องการเพิ่มผู้ใช้ภายหลัง ให้ตั้ง `ALLOW_REGISTRATION=true` ใน `.env` แล้วรัน `docker compose up -d` จากนั้นตั้งกลับเป็น `false`
+
+> ⚠️ ถ้าเปิดผ่าน `http://IP:3004` ตรงๆ (ไม่มี HTTPS) ต้องตั้ง `COOKIE_SECURE=false` ใน `.env` ไม่อย่างนั้นจะ login ไม่ติด แต่รหัสผ่านและข้อมูลการเงินจะส่งผ่านเน็ตแบบไม่เข้ารหัส จึงแนะนำให้ใส่ HTTPS ด้านหน้าแล้วคง `COOKIE_SECURE=true`
+
+**ใช้ Caddy ที่แถมมาทำ HTTPS ให้ (ไม่บังคับ):** ตั้ง `DOMAIN` ใน `.env` เป็นโดเมนที่ DNS ชี้มาที่ VPS เปิด port 80, 443 แล้วรัน `docker compose --profile caddy up -d --build`
 
 ### ย้ายข้อมูลจากเครื่องตัวเองขึ้น VPS
 ```bash
@@ -90,11 +94,10 @@ docker compose cp app:/app/data/backup.db ./myinvest-$(date +%F).db
 ### ค่าใน `.env`
 | ตัวแปร | ค่าเริ่มต้น | ความหมาย |
 | --- | --- | --- |
-| `DOMAIN` | (ต้องใส่) | โดเมนที่ใช้เข้าเว็บ Caddy จะออกใบรับรอง HTTPS ให้ |
+| `APP_PORT` | `3004` | port บน VPS ที่เปิดให้เข้าแอป |
+| `DOMAIN` | (ว่าง) | ใช้เฉพาะกับ `--profile caddy` โดเมนที่ Caddy จะออกใบรับรอง HTTPS ให้ |
 | `ALLOW_REGISTRATION` | `false` | `true` = เปิดรับสมัครเสมอ ส่วน `false` = รับสมัครได้เฉพาะตอนที่ยังไม่มีผู้ใช้ |
-| `COOKIE_SECURE` | `true` | ส่ง cookie เข้าสู่ระบบผ่าน HTTPS เท่านั้น ตั้ง `false` เฉพาะตอนทดสอบผ่าน http |
-
-> ⚠️ ไม่แนะนำให้เปิดใช้ผ่าน `http://IP:3000` โดยตรง เพราะรหัสผ่านและข้อมูลการเงินจะส่งผ่านเน็ตแบบไม่เข้ารหัส ถ้ายังไม่มีโดเมน ให้ใช้ SSH tunnel แทน (`ssh -L 3000:localhost:3000 <vps>`) โดยเพิ่ม `ports: ["127.0.0.1:3000:3000"]` ให้ service `app` และตั้ง `COOKIE_SECURE=false`
+| `COOKIE_SECURE` | `true` | ส่ง cookie เข้าสู่ระบบผ่าน HTTPS เท่านั้น ตั้ง `false` ถ้าเปิดผ่าน http ตรงๆ |
 
 ## โครงสร้าง
 

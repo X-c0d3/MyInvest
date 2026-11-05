@@ -1,7 +1,7 @@
-# MyInvest on a VPS: the app plus Caddy for automatic HTTPS.
-#   1. cp .env.example .env   and set DOMAIN (a domain whose DNS points at this VPS)
-#   2. docker compose up -d --build
-# Without a domain, see README "Deploy บน VPS" for the IP-only option.
+# MyInvest on a VPS. The app listens on port 3004 of the host.
+#   1. cp .env.example .env
+#   2. docker compose up -d --build                    -> http://<vps>:3004 (put your own HTTPS proxy in front)
+#   or docker compose --profile caddy up -d --build    -> also runs Caddy for HTTPS on $DOMAIN (needs ports 80/443)
 
 services:
   app:
@@ -15,12 +15,13 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
     volumes:
       - myinvest-data:/app/data
-    # Reachable only through Caddy; not published on the host.
-    expose:
-      - "3000"
+    ports:
+      - "${APP_PORT:-3004}:3004"
 
+  # Optional: only starts with --profile caddy.
   caddy:
     image: caddy:2
+    profiles: ["caddy"]
     restart: unless-stopped
     depends_on:
       - app
@@ -28,7 +29,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      DOMAIN: ${DOMAIN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
