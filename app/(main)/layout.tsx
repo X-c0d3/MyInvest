@@ -3,29 +3,37 @@ import { Suspense } from "react";
 import { LogOut } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { logout } from "@/app/auth-actions";
-import { Nav } from "@/components/nav";
+import { Nav, TabBar, TopLinks } from "@/components/nav";
 import { ThemeToggle } from "@/components/theme";
 import { Logo } from "@/components/logo";
 
 export default function MainLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-[2400px] flex-col md:flex-row">
-      <aside className="z-10 flex flex-col gap-4 border-b border-line bg-surface/80 p-4 backdrop-blur md:sticky md:top-0 md:h-screen md:w-56 md:shrink-0 md:border-r md:border-b-0 md:p-4">
-        <div className="flex items-center justify-between">
+      {/* Phones: compact top bar + bottom tab bar. */}
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-line bg-surface/90 px-4 py-2.5 backdrop-blur md:hidden">
+        <Link href="/" aria-label="ภาพรวม">
           <Logo />
-          <div className="md:hidden">
-            <ThemeToggle />
-          </div>
+        </Link>
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle />
+          <TopLinks />
         </div>
+      </header>
+      <TabBar />
+
+      {/* Tablet and up: sidebar. */}
+      <aside className="sticky top-0 z-10 hidden h-screen w-56 shrink-0 flex-col gap-4 border-r border-line bg-surface/80 p-4 backdrop-blur md:flex">
+        <Logo />
         <Nav />
-        <div className="mt-auto hidden flex-col gap-3 md:flex">
+        <div className="mt-auto flex flex-col gap-3">
           <ThemeToggle />
           <Suspense fallback={null}>
             <UserMenu />
           </Suspense>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+      <main className="min-w-0 flex-1 p-4 pb-24 md:p-6">{children}</main>
     </div>
   );
 }

@@ -33,6 +33,8 @@ import {
   PortfolioTabs,
   pickPortfolio,
   Stat,
+  MobileItem,
+  MobileList,
 } from "@/components/ui";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -228,7 +230,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         </div>
       </section>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           emoji="🏦"
           label="เงินต้น (รวมทบต้น)"
@@ -379,7 +381,47 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         icon={<Wallet className="size-5" />}
         className="mb-4"
       >
-        <div className="overflow-x-auto">
+        <MobileList empty={summaries.length === 0 ? "🌱 ยังไม่มีพอร์ต" : null}>
+          {summaries.map((s) => {
+            const cost = s.costBasis * s.fxRate;
+            return (
+              <MobileItem
+                key={s.portfolio.id}
+                href={`/holdings?p=${s.portfolio.id}`}
+                icon={portfolioEmoji(s.portfolio)}
+                title={s.portfolio.name}
+                subtitle={`ทุน ${fmt(cost, 0)} · 💵 ${s.cashEntered ? fmt(s.cashThb, 0) : "ยังไม่ใส่เงินสด"}`}
+                amount={fmt(s.holdingsValue * s.fxRate)}
+                meta={
+                  <span className={toneClass(s.unrealizedThb)}>
+                    {fmtSigned(s.unrealizedThb)} (
+                    {fmtPct(cost > 0 ? (s.unrealizedThb / cost) * 100 : 0)})
+                  </span>
+                }
+              />
+            );
+          })}
+          {summaries.length > 1 ? (
+            <li className="flex items-center justify-between gap-3 px-1 py-3 font-semibold">
+              <span>รวม</span>
+              <span className="text-right tabular-nums">
+                {fmt(tableMarket)}
+                <span
+                  className={`block text-xs ${toneClass(tableMarket - tableCost)}`}
+                >
+                  {fmtSigned(tableMarket - tableCost)} (
+                  {fmtPct(
+                    tableCost > 0
+                      ? ((tableMarket - tableCost) / tableCost) * 100
+                      : 0,
+                  )}
+                  )
+                </span>
+              </span>
+            </li>
+          ) : null}
+        </MobileList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="table">
             <thead>
               <tr>
@@ -405,10 +447,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                         </span>
                       ) : null}
                     </td>
-                    <td className="num">{fmt(cost)}</td>
-                    <td className="num font-medium">{fmt(market)}</td>
+                    <td className="num" data-label="ต้นทุน (฿)">
+                      {fmt(cost)}
+                    </td>
+                    <td className="num font-medium" data-label="มูลค่าตลาด (฿)">
+                      {fmt(market)}
+                    </td>
                     <td
                       className={`num font-semibold ${toneClass(s.unrealizedThb)}`}
+                      data-label="กำไร/ขาดทุน (฿)"
                     >
                       {fmtSigned(s.unrealizedThb)}{" "}
                       <span className="text-xs">
@@ -416,7 +463,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                         )
                       </span>
                     </td>
-                    <td className="num text-muted">
+                    <td
+                      className="num text-muted"
+                      data-label="💵 เงินสดในโบรก (฿)"
+                    >
                       {s.cashEntered ? fmt(s.cashThb) : "ยังไม่ได้ใส่"}
                     </td>
                   </tr>
@@ -427,10 +477,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
               <tfoot>
                 <tr className="font-semibold">
                   <td className="px-3 py-2.5">รวม</td>
-                  <td className="num px-3 py-2.5">{fmt(tableCost)}</td>
-                  <td className="num px-3 py-2.5">{fmt(tableMarket)}</td>
+                  <td className="num px-3 py-2.5" data-label="ต้นทุน (฿)">
+                    {fmt(tableCost)}
+                  </td>
+                  <td className="num px-3 py-2.5" data-label="มูลค่าตลาด (฿)">
+                    {fmt(tableMarket)}
+                  </td>
                   <td
                     className={`num px-3 py-2.5 ${toneClass(tableMarket - tableCost)}`}
+                    data-label="กำไร/ขาดทุน (฿)"
                   >
                     {fmtSigned(tableMarket - tableCost)}{" "}
                     <span className="text-xs">
@@ -443,7 +498,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                       )
                     </span>
                   </td>
-                  <td className="num px-3 py-2.5 text-muted">
+                  <td
+                    className="num px-3 py-2.5 text-muted"
+                    data-label="💵 เงินสดในโบรก (฿)"
+                  >
                     {fmt(summaries.reduce((t, x) => t + x.cashThb, 0))}
                   </td>
                 </tr>
@@ -458,7 +516,62 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       </Card>
 
       <Card title="สรุปรายปี (บาท)" icon={<CalendarRange className="size-5" />}>
-        <div className="overflow-x-auto">
+        {/* Phones: one compact card per year. */}
+        <ul className="grid gap-2.5 sm:hidden">
+          {years.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted">
+              📅 ยังไม่มีข้อมูล
+            </li>
+          ) : null}
+          {years.map((y) => {
+            const back = y.deposit - y.fresh;
+            return (
+              <li
+                key={y.year}
+                className="overflow-hidden rounded-xl border border-line"
+              >
+                <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-accent-soft via-accent-soft/40 to-surface-2 px-3 py-2">
+                  <span className="font-semibold">{y.year}</span>
+                  <span
+                    className={`badge ${y.returnPct > 0 ? "bg-pos-soft text-pos" : y.returnPct < 0 ? "bg-neg-soft text-neg" : "bg-subtle text-muted"}`}
+                    title="ผลตอบแทน %"
+                  >
+                    {y.returnPct > 0 ? "▲" : y.returnPct < 0 ? "▼" : "•"}{" "}
+                    {fmtPct(y.returnPct)}
+                  </span>
+                </div>
+                <dl className="grid grid-cols-3 gap-2 px-3 pt-2.5 text-xs tabular-nums">
+                  {[
+                    ["เงินเก็บสุทธิ", y.netDeposit, toneClass(y.netDeposit)],
+                    ["ปันผลสุทธิ", y.dividendNet, ""],
+                    ["เงินต้นสะสม", y.capital, ""],
+                  ].map(([label, value, tone]) => (
+                    <div key={label as string} className="min-w-0">
+                      <dt className="truncate text-muted">{label}</dt>
+                      <dd className={`truncate text-sm font-semibold ${tone}`}>
+                        {fmt(value as number, 0)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 pt-1.5 pb-2.5 text-xs text-muted tabular-nums">
+                  <span className="text-pos">💰 +{fmt(y.fresh, 0)}</span>
+                  {back ? <span>🔁 +{fmt(back, 0)}</span> : null}
+                  {y.withdraw ? (
+                    <span className="text-neg">ถอน −{fmt(y.withdraw, 0)}</span>
+                  ) : null}
+                  {y.realized ? (
+                    <span className={toneClass(y.realized)}>
+                      ขายแล้ว {fmtSigned(y.realized)}
+                    </span>
+                  ) : null}
+                  <span>ปันผล {fmtPct(y.dividendYieldPct)}</span>
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="table">
             <thead>
               <tr>
@@ -479,23 +592,40 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
               {years.map((y) => (
                 <tr key={y.year}>
                   <td className="font-semibold">{y.year}</td>
-                  <td className="num">{fmt(y.fresh)}</td>
-                  <td className="num text-muted">
+                  <td className="num" data-label="💰 เงินใหม่">
+                    {fmt(y.fresh)}
+                  </td>
+                  <td className="num text-muted" data-label="🔁 นำกลับ">
                     {y.deposit - y.fresh ? fmt(y.deposit - y.fresh) : "-"}
                   </td>
-                  <td className={`num ${y.withdraw ? "text-neg" : ""}`}>
+                  <td
+                    className={`num ${y.withdraw ? "text-neg" : ""}`}
+                    data-label="ถอน"
+                  >
                     {y.withdraw ? `(${fmt(y.withdraw)})` : "-"}
                   </td>
-                  <td className={`num ${toneClass(y.netDeposit)}`}>
+                  <td
+                    className={`num ${toneClass(y.netDeposit)}`}
+                    data-label="เงินเก็บสุทธิ"
+                  >
                     {fmt(y.netDeposit)}
                   </td>
-                  <td className="num">{fmt(y.dividendNet)}</td>
-                  <td className={`num ${toneClass(y.realized)}`}>
+                  <td className="num" data-label="ปันผลสุทธิ">
+                    {fmt(y.dividendNet)}
+                  </td>
+                  <td
+                    className={`num ${toneClass(y.realized)}`}
+                    data-label="กำไรที่ขายแล้ว"
+                  >
                     {fmtSigned(y.realized)}
                   </td>
-                  <td className="num">{fmt(y.capital)}</td>
-                  <td className="num">{fmtPct(y.dividendYieldPct)}</td>
-                  <td className="num">
+                  <td className="num" data-label="เงินต้นสะสม">
+                    {fmt(y.capital)}
+                  </td>
+                  <td className="num" data-label="ปันผล %">
+                    {fmtPct(y.dividendYieldPct)}
+                  </td>
+                  <td className="num" data-label="ผลตอบแทน %">
                     <span
                       className={`badge ${y.returnPct > 0 ? "bg-pos-soft text-pos" : y.returnPct < 0 ? "bg-neg-soft text-neg" : "bg-subtle text-muted"}`}
                     >

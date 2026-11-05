@@ -20,6 +20,7 @@ import {
   fmtSigned,
   portfolioEmoji,
   toneClass,
+  ASSET_LABEL,
 } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
@@ -35,6 +36,8 @@ import {
   PortfolioTabs,
   pickPortfolio,
   Stat,
+  MobileItem,
+  MobileList,
 } from "@/components/ui";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -115,7 +118,7 @@ export default async function HoldingsPage({
         </div>
       </PageHeader>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1 sm:grid-cols-3">
         <Stat emoji="🧮" label="ต้นทุนรวม (฿)" value={fmt(cost)} />
         <Stat emoji="🏷️" label="มูลค่าตามราคาตลาด (฿)" value={fmt(value)} />
         <Stat
@@ -132,7 +135,50 @@ export default async function HoldingsPage({
         icon={<Briefcase className="size-5" />}
         className="mb-4"
       >
-        <div className="overflow-x-auto">
+        <MobileList
+          empty={
+            holdings.length === 0
+              ? "🧺 ยังไม่มีหุ้น กด “เพิ่มหุ้น” แล้วใส่ตามแอปโบรก"
+              : null
+          }
+        >
+          {holdings.map((h) => {
+            const p = portById.get(h.portfolioId);
+            const ccy = p?.currency ?? "THB";
+            return (
+              <MobileItem
+                key={`${h.portfolioId}:${h.symbol}`}
+                href={editHref(h)}
+                icon={ASSET_LABEL[h.assetType].emoji}
+                title={h.symbol}
+                subtitle={`${fmtQty(h.quantity)} หุ้น · ทุน ${fmtPrice(h.avgCost)}${h.marketPrice === null ? "" : ` · ราคา ${fmtPrice(h.marketPrice)}`}${showPortfolio && p ? ` · ${portfolioEmoji(p)}` : ""}`}
+                amount={<Money value={h.marketValue} currency={ccy} />}
+                meta={
+                  h.marketPrice === null ? (
+                    "ใส่ราคาล่าสุด"
+                  ) : (
+                    <span className={toneClass(h.unrealized)}>
+                      {fmtSigned(h.unrealized)} ({fmtPct(h.unrealizedPct)})
+                    </span>
+                  )
+                }
+              />
+            );
+          })}
+          {holdings.length > 1 ? (
+            <li className="flex items-center justify-between gap-3 px-1 py-3 font-semibold">
+              <span>รวม (฿)</span>
+              <span className="text-right tabular-nums">
+                {fmt(value)}
+                <span className={`block text-xs ${toneClass(pl)}`}>
+                  {fmtSigned(pl)}
+                  {cost > 0 ? ` (${fmtPct((pl / cost) * 100)})` : ""}
+                </span>
+              </span>
+            </li>
+          ) : null}
+        </MobileList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="table">
             <thead>
               <tr>
@@ -167,27 +213,32 @@ export default async function HoldingsPage({
                       </span>
                     </td>
                     {showPortfolio ? (
-                      <td>
+                      <td data-label="พอร์ต" data-wide>
                         {p ? portfolioEmoji(p) : ""} {p?.name}
                       </td>
                     ) : null}
-                    <td className="num">{fmtQty(h.quantity)}</td>
-                    <td className="num">{fmtPrice(h.avgCost)}</td>
-                    <td className="num">
+                    <td className="num" data-label="จำนวน">
+                      {fmtQty(h.quantity)}
+                    </td>
+                    <td className="num" data-label="ต้นทุนเฉลี่ย">
+                      {fmtPrice(h.avgCost)}
+                    </td>
+                    <td className="num" data-label="ราคาล่าสุด">
                       {h.marketPrice === null ? (
                         <span className="text-muted">-</span>
                       ) : (
                         fmtPrice(h.marketPrice)
                       )}
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="ต้นทุนรวม">
                       <Money value={h.costBasis} currency={ccy} />
                     </td>
-                    <td className="num font-medium">
+                    <td className="num font-medium" data-label="มูลค่า">
                       <Money value={h.marketValue} currency={ccy} />
                     </td>
                     <td
                       className={`num font-semibold ${toneClass(h.unrealized)}`}
+                      data-label="กำไร/ขาดทุน"
                     >
                       {h.marketPrice === null ? (
                         <span className="font-normal text-muted">
@@ -227,9 +278,16 @@ export default async function HoldingsPage({
                   <td />
                   <td />
                   <td />
-                  <td className="num px-3 py-2.5">{fmt(cost)}</td>
-                  <td className="num px-3 py-2.5">{fmt(value)}</td>
-                  <td className={`num px-3 py-2.5 ${toneClass(pl)}`}>
+                  <td className="num px-3 py-2.5" data-label="ต้นทุนรวม">
+                    {fmt(cost)}
+                  </td>
+                  <td className="num px-3 py-2.5" data-label="มูลค่า">
+                    {fmt(value)}
+                  </td>
+                  <td
+                    className={`num px-3 py-2.5 ${toneClass(pl)}`}
+                    data-label="กำไร/ขาดทุน"
+                  >
                     {fmtSigned(pl)}{" "}
                     {cost > 0 ? (
                       <span className="text-xs">

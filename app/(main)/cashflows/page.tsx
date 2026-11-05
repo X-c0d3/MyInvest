@@ -46,6 +46,9 @@ import {
   pickPortfolio,
   Stat,
   today,
+  MobileItem,
+  MobileList,
+  ModalDelete,
 } from "@/components/ui";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -215,7 +218,7 @@ export default async function CashflowsPage({
       key={href}
       href={href}
       scroll={false}
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
+      className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm whitespace-nowrap transition ${
         active
           ? "border-transparent bg-accent text-white shadow-sm dark:text-[#06281f]"
           : "border-line bg-surface hover:bg-subtle"
@@ -246,7 +249,7 @@ export default async function CashflowsPage({
         <NewButton basePath="/cashflows" href={query({ extra: "new=1" })} />
       </PageHeader>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1 sm:grid-cols-3">
         <Stat
           emoji={<ArrowDownLeft className="size-5" />}
           iconClassName="bg-pos-soft text-pos"
@@ -470,6 +473,13 @@ export default async function CashflowsPage({
             />
           </Field>
         </ActionForm>
+        {editing ? (
+          <ModalDelete
+            table="cashflows"
+            id={editing.id}
+            label={`รายการ ${fmt(editing.amount)} วันที่ ${fmtDate(editing.date)}`}
+          />
+        ) : null}
       </FormModal>
 
       <section id="history" className="scroll-mt-6">
@@ -482,7 +492,7 @@ export default async function CashflowsPage({
         >
           {/* Filters are built from the user's own portfolios, so new or renamed portfolios appear automatically. */}
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {chip(
                 query({ h: null }) + "#history",
                 !filterPort,
@@ -499,7 +509,7 @@ export default async function CashflowsPage({
                 ),
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {chip(
                 query({ t: null }) + "#history",
                 !filterKind,
@@ -532,13 +542,20 @@ export default async function CashflowsPage({
                 open={gi === 0}
                 className="group/year overflow-hidden rounded-xl border border-line"
               >
-                <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 bg-surface-2 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+                <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 bg-gradient-to-r from-accent-soft via-accent-soft/40 to-surface-2 px-4 py-3 sm:gap-x-4 select-none [&::-webkit-details-marker]:hidden">
                   <ChevronRight className="size-4 text-muted transition-transform group-open/year:rotate-90" />
                   <span className="text-base font-semibold">{g.year}</span>
                   <span className="text-xs text-muted">
                     {g.items.length} รายการ
                   </span>
-                  <span className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-sm tabular-nums">
+                  {/* Phones: net on the first line, details on a second line; wider screens: one line. */}
+                  <span
+                    className={`badge ml-auto tabular-nums sm:order-last sm:ml-0 ${g.fresh + g.reinvest - g.withdraw >= 0 ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
+                    title="ฝาก (เงินใหม่ + นำกลับ) − ถอน"
+                  >
+                    สุทธิ {fmtSigned(g.fresh + g.reinvest - g.withdraw)}
+                  </span>
+                  <span className="order-last flex basis-full flex-wrap items-center gap-x-3 gap-y-0.5 pl-7 text-xs tabular-nums sm:order-none sm:ml-auto sm:basis-auto sm:gap-x-4 sm:pl-0 sm:text-sm">
                     {g.fresh ? (
                       <span className="text-pos">💰 +{fmt(g.fresh)}</span>
                     ) : null}
@@ -548,15 +565,71 @@ export default async function CashflowsPage({
                     {g.withdraw ? (
                       <span className="text-neg">−{fmt(g.withdraw)}</span>
                     ) : null}
-                    <span
-                      className={`badge ${g.fresh + g.reinvest - g.withdraw >= 0 ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
-                      title="ฝาก (เงินใหม่ + นำกลับ) − ถอน"
-                    >
-                      สุทธิ {fmtSigned(g.fresh + g.reinvest - g.withdraw)}
-                    </span>
                   </span>
                 </summary>
-                <div className="overflow-x-auto">
+                <div className="px-3 sm:hidden">
+                  <MobileList>
+                    {g.items.map((c) => {
+                      const p = portById.get(c.portfolioId);
+                      const ccy = p?.currency ?? "THB";
+                      const isDeposit = c.type === "deposit";
+                      const src = CASH_SOURCE_LABEL[c.source];
+                      return (
+                        <MobileItem
+                          key={c.id}
+                          href={query({ extra: `edit=${c.id}` })}
+                          icon={
+                            isDeposit ? (
+                              <ArrowDownLeft className="size-4" />
+                            ) : (
+                              <ArrowUpRight className="size-4" />
+                            )
+                          }
+                          iconClassName={
+                            isDeposit
+                              ? "bg-pos-soft text-pos"
+                              : "bg-neg-soft text-neg"
+                          }
+                          title={isDeposit ? "ฝาก" : "ถอน"}
+                          badge={
+                            isDeposit && !isFreshMoney(c) ? (
+                              <span className="badge shrink-0 bg-accent-soft text-[10px] text-accent">
+                                {src.emoji} {src.label}
+                              </span>
+                            ) : null
+                          }
+                          subtitle={[
+                            fmtDate(c.date),
+                            showPortfolio && p ? portfolioEmoji(p) : null,
+                            c.account || null,
+                            c.note ? `📝 ${c.note}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          amount={
+                            <>
+                              {isDeposit ? "+" : "−"}
+                              <Money value={c.amount} currency={ccy} />
+                            </>
+                          }
+                          amountClassName={
+                            isDeposit
+                              ? isFreshMoney(c)
+                                ? "text-pos"
+                                : "text-foreground"
+                              : "text-neg"
+                          }
+                          meta={
+                            ccy !== "THB"
+                              ? `≈ ${fmt(c.amountThb ?? thb(c))} ฿`
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </MobileList>
+                </div>
+                <div className="hidden overflow-x-auto sm:block">
                   <table className="table">
                     <thead>
                       <tr>
@@ -579,10 +652,13 @@ export default async function CashflowsPage({
                         const src = CASH_SOURCE_LABEL[c.source];
                         return (
                           <tr key={c.id}>
-                            <td className="text-muted tabular-nums">
+                            <td
+                              className="text-muted tabular-nums"
+                              data-label="วันที่"
+                            >
                               {fmtDate(c.date)}
                             </td>
-                            <td>
+                            <td data-title>
                               <span className="flex items-center gap-2.5">
                                 <span
                                   className={`flex size-8 items-center justify-center rounded-full ${isDeposit ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
@@ -607,7 +683,7 @@ export default async function CashflowsPage({
                               </span>
                             </td>
                             {showPortfolio ? (
-                              <td>
+                              <td data-label="พอร์ต">
                                 <span className="inline-flex items-center gap-2">
                                   <span
                                     className="size-2.5 rounded-sm"
@@ -621,12 +697,16 @@ export default async function CashflowsPage({
                             ) : null}
                             <td
                               className={`num font-semibold ${isDeposit ? (isFreshMoney(c) ? "text-pos" : "text-foreground") : "text-neg"}`}
+                              data-label="จำนวนเงิน"
                             >
                               {isDeposit ? "+" : "−"}
                               <Money value={c.amount} currency={ccy} />
                             </td>
                             {hasForeign ? (
-                              <td className="num text-muted">
+                              <td
+                                className="num text-muted"
+                                data-label="เป็นเงินบาท"
+                              >
                                 {ccy === "THB" ? (
                                   ""
                                 ) : c.amountThb === null ? (
@@ -638,7 +718,11 @@ export default async function CashflowsPage({
                                 )}
                               </td>
                             ) : null}
-                            <td className="max-w-xs">
+                            <td
+                              className="max-w-xs"
+                              data-label="บัญชี / หมายเหตุ"
+                              data-wide
+                            >
                               <span className="block truncate">
                                 {c.account || (
                                   <span className="text-muted">-</span>

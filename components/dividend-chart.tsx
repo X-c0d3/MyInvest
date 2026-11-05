@@ -123,7 +123,7 @@ export function DividendChart({
 
                   <div
                     role="tooltip"
-                    className={`pointer-events-none absolute top-2 z-10 w-44 rounded-xl border border-line bg-surface p-3 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${tooltipSide}`}
+                    className={`pointer-events-none absolute top-2 z-10 w-44 rounded-xl border border-line bg-surface hidden max-w-[calc(100vw-3rem)] p-3 text-xs shadow-lg group-hover:block group-focus-visible:block ${tooltipSide}`}
                   >
                     <p className="mb-1.5 font-semibold">
                       ปี {s.year} {s === best ? "🏆" : ""}

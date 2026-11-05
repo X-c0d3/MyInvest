@@ -33,6 +33,9 @@ import {
   Stat,
   today,
   NewButton,
+  MobileItem,
+  MobileList,
+  ModalDelete,
 } from "@/components/ui";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -129,7 +132,7 @@ export default async function DividendsPage({
         </div>
       </PageHeader>
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 [&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           emoji="💰"
           label="ปันผลสุทธิสะสม (฿)"
@@ -350,10 +353,36 @@ export default async function DividendsPage({
             </Field>
           </ActionForm>
         )}
+        {editing ? (
+          <ModalDelete
+            table="dividends"
+            id={editing.id}
+            label={`ปันผล ${editing.symbol} วันที่ ${fmtDate(editing.paidDate)}`}
+          />
+        ) : null}
       </FormModal>
 
       <Card title="ประวัติ" icon={<ListOrdered className="size-5" />}>
-        <div className="overflow-x-auto">
+        <MobileList empty={rows.length === 0 ? "🎁 ยังไม่มีรายการปันผล" : null}>
+          {rows.map((d) => {
+            const p = portById.get(d.portfolioId);
+            const ccy = p?.currency ?? "THB";
+            return (
+              <MobileItem
+                key={d.id}
+                href={`/dividends?edit=${d.id}`}
+                icon="🎁"
+                iconClassName="bg-accent-soft"
+                title={d.symbol}
+                subtitle={`จ่าย ${fmtDate(d.paidDate)} · ${fmtQty(d.shares)} หุ้น × ${fmt(d.dps, 4)}${p && portfolios.length > 1 ? ` · ${portfolioEmoji(p)}` : ""}`}
+                amount={<Money value={dividendNet(d)} currency={ccy} />}
+                amountClassName="text-pos"
+                meta={`ภาษี ${fmt(dividendTax(d))}`}
+              />
+            );
+          })}
+        </MobileList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="table">
             <thead>
               <tr>
@@ -378,24 +407,31 @@ export default async function DividendsPage({
                 return (
                   <tr key={d.id}>
                     <td className="font-semibold">{d.symbol}</td>
-                    <td>
+                    <td data-label="พอร์ต">
                       {portfolioEmoji(portById.get(d.portfolioId)!)}{" "}
                       {portById.get(d.portfolioId)?.name}
                     </td>
-                    <td className="num">{fmtQty(d.shares)}</td>
-                    <td>{fmtDate(d.xdDate)}</td>
-                    <td>{fmtDate(d.paidDate)}</td>
-                    <td className="num">{fmt(d.dps, 4)}</td>
-                    <td className="num">
+                    <td className="num" data-label="จำนวนหุ้น">
+                      {fmtQty(d.shares)}
+                    </td>
+                    <td data-label="วัน XD">{fmtDate(d.xdDate)}</td>
+                    <td data-label="วันจ่าย">{fmtDate(d.paidDate)}</td>
+                    <td className="num" data-label="ปันผล/หุ้น">
+                      {fmt(d.dps, 4)}
+                    </td>
+                    <td className="num" data-label="รวม">
                       <Money value={dividendGross(d)} currency={ccy} />
                     </td>
-                    <td className="num text-muted">
+                    <td className="num text-muted" data-label="ภาษี">
                       {fmt(dividendTax(d))}{" "}
                       <span className="text-xs">
                         ({Number(d.taxRate.toFixed(2))}%)
                       </span>
                     </td>
-                    <td className="num font-semibold text-pos">
+                    <td
+                      className="num font-semibold text-pos"
+                      data-label="สุทธิ"
+                    >
                       <Money value={dividendNet(d)} currency={ccy} />
                     </td>
                     <td>

@@ -15,6 +15,7 @@ import {
   fmtSigned,
   toneClass,
   portfolioEmoji,
+  ASSET_LABEL,
 } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
@@ -32,6 +33,9 @@ import {
   pickPortfolio,
   today,
   NewButton,
+  MobileItem,
+  MobileList,
+  ModalDelete,
 } from "@/components/ui";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -177,10 +181,63 @@ export default async function TradesPage({
             />
           </Field>
         </ActionForm>
+        {editing ? (
+          <ModalDelete
+            table="trades"
+            id={editing.id}
+            label={`${editing.side === "buy" ? "ซื้อ" : "ขาย"} ${editing.symbol} วันที่ ${fmtDate(editing.date)}`}
+          />
+        ) : null}
       </FormModal>
 
       <Card title="ประวัติ" icon={<ListOrdered className="size-5" />}>
-        <div className="overflow-x-auto">
+        <MobileList
+          empty={rows.length === 0 ? "🛒 ยังไม่มีรายการซื้อขาย" : null}
+        >
+          {rows.map((t) => {
+            const p = portById.get(t.portfolioId);
+            const ccy = p?.currency ?? "THB";
+            const pnl = pnlByTrade.get(t.id);
+            const total =
+              t.quantity * t.price + (t.side === "buy" ? t.fee : -t.fee);
+            const covered = skipped.has(t.id);
+            return (
+              <MobileItem
+                key={t.id}
+                href={`/trades?edit=${t.id}`}
+                dim={covered}
+                icon={ASSET_LABEL[t.assetType].emoji}
+                iconClassName={t.side === "buy" ? "bg-pos-soft" : "bg-neg-soft"}
+                title={t.symbol}
+                badge={
+                  <>
+                    <span
+                      className={`badge shrink-0 text-[10px] ${t.side === "buy" ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
+                    >
+                      {t.side === "buy" ? "BUY" : "SELL"}
+                    </span>
+                    {covered ? (
+                      <span className="badge shrink-0 bg-subtle text-[10px] text-muted">
+                        รวมแล้ว
+                      </span>
+                    ) : null}
+                  </>
+                }
+                subtitle={`${fmtDate(t.date)} · ${fmtQty(t.quantity)} @ ${fmtPrice(t.price)}${p && portfolios.length > 1 ? ` · ${portfolioEmoji(p)}` : ""}`}
+                amount={<Money value={total} currency={ccy} />}
+                meta={
+                  pnl === undefined ? undefined : (
+                    <span className={toneClass(pnl)}>
+                      {pnl >= 0 ? "🎉 " : ""}
+                      {fmtSigned(pnl)}
+                    </span>
+                  )
+                }
+              />
+            );
+          })}
+        </MobileList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="table">
             <thead>
               <tr>
@@ -213,12 +270,14 @@ export default async function TradesPage({
                     key={t.id}
                     className={skipped.has(t.id) ? "text-muted" : undefined}
                   >
-                    <td>{fmtDate(t.date)}</td>
-                    <td className="font-semibold">{t.symbol}</td>
-                    <td>
+                    <td data-label="วันที่">{fmtDate(t.date)}</td>
+                    <td className="font-semibold" data-title>
+                      {t.symbol}
+                    </td>
+                    <td data-label="ชนิด">
                       <AssetBadge type={t.assetType} />
                     </td>
-                    <td>
+                    <td data-label="รายการ">
                       <span className="flex flex-col items-start gap-0.5">
                         <span
                           className={`badge ${t.side === "buy" ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"}`}
@@ -235,17 +294,24 @@ export default async function TradesPage({
                         ) : null}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="พอร์ต">
                       {p ? portfolioEmoji(p) : ""} {p?.name}
                     </td>
-                    <td className="num">{fmtQty(t.quantity)}</td>
-                    <td className="num">{fmtPrice(t.price)}</td>
-                    <td className="num text-muted">{fmtPrice(t.fee)}</td>
-                    <td className="num">
+                    <td className="num" data-label="จำนวน">
+                      {fmtQty(t.quantity)}
+                    </td>
+                    <td className="num" data-label="ราคา">
+                      {fmtPrice(t.price)}
+                    </td>
+                    <td className="num text-muted" data-label="ค่าธรรมเนียม">
+                      {fmtPrice(t.fee)}
+                    </td>
+                    <td className="num" data-label="มูลค่ารวม">
                       <Money value={total} currency={ccy} />
                     </td>
                     <td
                       className={`num ${pnl === undefined ? "text-muted" : toneClass(pnl)}`}
+                      data-label="กำไรที่ขายแล้ว"
                     >
                       {pnl === undefined ? (
                         "-"
@@ -256,7 +322,7 @@ export default async function TradesPage({
                         </>
                       )}
                     </td>
-                    <td>
+                    <td data-label="โบรกเกอร์">
                       <span
                         className="block max-w-32 truncate"
                         title={t.broker}

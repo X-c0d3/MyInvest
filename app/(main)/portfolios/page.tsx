@@ -8,7 +8,7 @@ import {
 } from "@/lib/data";
 import { buildFx } from "@/lib/calc";
 import { saveFxRateAction, savePortfolioAction } from "@/app/actions";
-import { CURRENCY_FLAG, fmt } from "@/lib/format";
+import { CURRENCY_FLAG, fmt, portfolioEmoji } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
 import {
@@ -19,6 +19,9 @@ import {
   RowActions,
   pickEdit,
   NewButton,
+  MobileItem,
+  MobileList,
+  ModalDelete,
 } from "@/components/ui";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -125,6 +128,13 @@ export default async function PortfoliosPage({
               />
             </Field>
           </ActionForm>
+          {editing ? (
+            <ModalDelete
+              table="portfolios"
+              id={editing.id}
+              label={`พอร์ต "${editing.name}" และรายการทั้งหมดในพอร์ตนี้`}
+            />
+          ) : null}
         </FormModal>
 
         <Card
@@ -184,46 +194,77 @@ export default async function PortfoliosPage({
       </div>
 
       <Card title="พอร์ตทั้งหมด" icon={<FolderOpen className="size-5" />}>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>ชื่อพอร์ต</th>
-              <th>ประเภท</th>
-              <th>สกุลเงิน</th>
-              <th>ปันผลจ่ายไปที่</th>
-              <th>หมายเหตุ</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {portfolios.length === 0 ? <EmptyRow cols={6} emoji="📂" /> : null}
-            {portfolios.map((p) => (
-              <tr key={p.id}>
-                <td className="font-semibold">{p.name}</td>
-                <td>{p.kind === "stock" ? "🏢 หุ้น / ETF" : "🪙 Crypto"}</td>
-                <td>
-                  {CURRENCY_FLAG[p.currency]} {p.currency}
-                </td>
-                <td className="text-muted">
-                  {p.kind === "crypto"
-                    ? "-"
-                    : p.dividendsToCash
-                      ? "💼 เงินสดในพอร์ต"
-                      : "🏦 บัญชีธนาคาร"}
-                </td>
-                <td>{p.note}</td>
-                <td>
-                  <RowActions
-                    href={`/portfolios?edit=${p.id}`}
-                    table="portfolios"
-                    id={p.id}
-                    label={`พอร์ต "${p.name}" และรายการทั้งหมดในพอร์ตนี้`}
-                  />
-                </td>
+        <MobileList empty={portfolios.length === 0 ? "📂 ยังไม่มีพอร์ต" : null}>
+          {portfolios.map((p) => (
+            <MobileItem
+              key={p.id}
+              href={`/portfolios?edit=${p.id}`}
+              icon={portfolioEmoji(p)}
+              title={p.name}
+              subtitle={[
+                p.kind === "stock" ? "🏢 หุ้น / ETF" : "🪙 Crypto",
+                p.kind === "crypto"
+                  ? null
+                  : p.dividendsToCash
+                    ? "ปันผลเข้าพอร์ต"
+                    : "ปันผลเข้าบัญชีธนาคาร",
+                p.note || null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              amount={p.currency}
+              amountClassName="text-muted font-medium"
+            />
+          ))}
+        </MobileList>
+        <div className="hidden sm:block">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>ชื่อพอร์ต</th>
+                <th>ประเภท</th>
+                <th>สกุลเงิน</th>
+                <th>ปันผลจ่ายไปที่</th>
+                <th>หมายเหตุ</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {portfolios.length === 0 ? (
+                <EmptyRow cols={6} emoji="📂" />
+              ) : null}
+              {portfolios.map((p) => (
+                <tr key={p.id}>
+                  <td className="font-semibold">{p.name}</td>
+                  <td data-label="ประเภท">
+                    {p.kind === "stock" ? "🏢 หุ้น / ETF" : "🪙 Crypto"}
+                  </td>
+                  <td data-label="สกุลเงิน">
+                    {CURRENCY_FLAG[p.currency]} {p.currency}
+                  </td>
+                  <td className="text-muted" data-label="ปันผลจ่ายไปที่">
+                    {p.kind === "crypto"
+                      ? "-"
+                      : p.dividendsToCash
+                        ? "💼 เงินสดในพอร์ต"
+                        : "🏦 บัญชีธนาคาร"}
+                  </td>
+                  <td data-label="หมายเหตุ" data-wide>
+                    {p.note}
+                  </td>
+                  <td>
+                    <RowActions
+                      href={`/portfolios?edit=${p.id}`}
+                      table="portfolios"
+                      id={p.id}
+                      label={`พอร์ต "${p.name}" และรายการทั้งหมดในพอร์ตนี้`}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </>
   );

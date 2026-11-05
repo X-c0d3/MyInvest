@@ -172,7 +172,7 @@ export function CashflowChart({
 
                     <div
                       role="tooltip"
-                      className={`pointer-events-none absolute top-2 z-10 w-72 rounded-xl border border-line bg-surface p-3 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${side}`}
+                      className={`pointer-events-none absolute top-2 z-10 w-72 rounded-xl border border-line bg-surface hidden max-w-[calc(100vw-3rem)] p-3 text-xs shadow-lg group-hover:block group-focus-visible:block ${side}`}
                     >
                       <p className="mb-2 font-semibold">ปี {c.year}</p>
                       {c.parts.length ? (

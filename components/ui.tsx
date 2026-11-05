@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Pencil, Plus } from "lucide-react";
+import { ChevronRight, Pencil, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AssetType, Portfolio } from "@/lib/data";
 import { ASSET_LABEL, fmt, portfolioEmoji } from "@/lib/format";
@@ -82,17 +82,23 @@ export function Stat({
   iconClassName?: string;
 }) {
   return (
-    <div className="card flex items-center gap-3 py-3.5">
+    <div className="card flex items-center gap-3 px-3 py-3 sm:px-4 sm:py-3.5">
       <span
-        className={`flex size-10 shrink-0 items-center justify-center rounded-xl text-lg ${iconClassName}`}
+        className={`hidden size-10 shrink-0 items-center justify-center rounded-xl text-lg sm:flex ${iconClassName}`}
         aria-hidden
       >
         {emoji}
       </span>
       <div className="min-w-0">
-        <p className="text-sm text-muted">{label}</p>
+        <p className="flex items-center gap-1 text-xs text-muted sm:text-sm">
+          {/* Phones: the icon moves next to the label so two tiles fit side by side. */}
+          <span className="sm:hidden [&_svg]:size-3.5" aria-hidden>
+            {emoji}
+          </span>
+          <span className="truncate">{label}</span>
+        </p>
         <p
-          className={`mt-0.5 truncate text-xl font-bold tracking-tight tabular-nums 2xl:text-2xl ${tone}`}
+          className={`mt-0.5 truncate text-lg font-bold tracking-tight tabular-nums sm:text-xl 2xl:text-2xl ${tone}`}
         >
           {value}
         </p>
@@ -273,6 +279,107 @@ export function RowActions({
         <Pencil className="size-4" />
         <span className="sr-only">แก้ไข</span>
       </Link>
+      <DeleteButton table={table} id={id} label={label} />
+    </div>
+  );
+}
+
+/**
+ * Phone list (hidden from 640px up, where the table shows instead). One row per item, like a
+ * banking app: icon, title and details on the left, amount on the right; tapping opens the edit modal.
+ */
+export function MobileList({
+  children,
+  empty,
+}: {
+  children: ReactNode;
+  empty?: ReactNode;
+}) {
+  return (
+    <ul className="-mx-1 divide-y divide-line/70 sm:hidden">
+      {empty ? (
+        <li className="py-10 text-center text-sm text-muted">{empty}</li>
+      ) : null}
+      {children}
+    </ul>
+  );
+}
+
+export function MobileItem({
+  href,
+  icon,
+  iconClassName = "bg-subtle",
+  title,
+  badge,
+  subtitle,
+  amount,
+  amountClassName = "",
+  meta,
+  dim = false,
+}: {
+  href: string;
+  icon: ReactNode;
+  iconClassName?: string;
+  title: ReactNode;
+  badge?: ReactNode;
+  subtitle?: ReactNode;
+  amount: ReactNode;
+  amountClassName?: string;
+  meta?: ReactNode;
+  /** Greys the row out (e.g. trades already covered by the opening positions). */
+  dim?: boolean;
+}) {
+  return (
+    <li>
+      <Link
+        href={href}
+        scroll={false}
+        className={`flex items-center gap-3 rounded-xl px-1 py-2.5 transition-colors active:bg-subtle ${dim ? "opacity-60" : ""}`}
+      >
+        <span
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full text-base ${iconClassName}`}
+          aria-hidden
+        >
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 font-semibold">{title}</span>
+            {badge}
+          </span>
+          {subtitle ? (
+            <span className="block truncate text-xs text-muted">
+              {subtitle}
+            </span>
+          ) : null}
+        </span>
+        <span className="max-w-[45%] shrink-0 text-right tabular-nums">
+          <span className={`block font-semibold ${amountClassName}`}>
+            {amount}
+          </span>
+          {meta ? (
+            <span className="block truncate text-xs text-muted">{meta}</span>
+          ) : null}
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted/60" aria-hidden />
+      </Link>
+    </li>
+  );
+}
+
+/** Delete control at the bottom of an edit modal (the phone list has no row buttons). */
+export function ModalDelete({
+  table,
+  id,
+  label,
+}: {
+  table: DeletableTable;
+  id: number;
+  label: string;
+}) {
+  return (
+    <div className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4">
+      <span className="text-sm text-muted">🗑️ ลบรายการนี้</span>
       <DeleteButton table={table} id={id} label={label} />
     </div>
   );
