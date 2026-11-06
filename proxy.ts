@@ -13,5 +13,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Static assets and the app icons must load on the login page too (no session yet).
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon).*)",
+  ],
 };
