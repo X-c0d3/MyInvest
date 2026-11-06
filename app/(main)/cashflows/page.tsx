@@ -627,7 +627,7 @@ export default async function CashflowsPage({
                           amount={
                             <>
                               {isDeposit ? "+" : "−"}
-                              <Money value={c.amount} currency={ccy} />
+                              <Money value={c.amount} currency={ccy} always />
                             </>
                           }
                           amountClassName={
@@ -639,7 +639,7 @@ export default async function CashflowsPage({
                           }
                           meta={
                             ccy !== "THB"
-                              ? `≈ ${fmt(c.amountThb ?? thb(c))} ฿`
+                              ? `≈ ${fmt(c.amountThb ?? thb(c))} THB`
                               : undefined
                           }
                         />
@@ -718,7 +718,7 @@ export default async function CashflowsPage({
                               data-label="จำนวนเงิน"
                             >
                               {isDeposit ? "+" : "−"}
-                              <Money value={c.amount} currency={ccy} />
+                              <Money value={c.amount} currency={ccy} always />
                             </td>
                             {hasForeign ? (
                               <td
@@ -729,10 +729,19 @@ export default async function CashflowsPage({
                                   ""
                                 ) : c.amountThb === null ? (
                                   <span title="ประมาณจากอัตราปัจจุบัน">
-                                    ≈ {fmt(thb(c))}
+                                    ≈{" "}
+                                    <Money
+                                      value={thb(c)}
+                                      currency="THB"
+                                      always
+                                    />
                                   </span>
                                 ) : (
-                                  fmt(c.amountThb)
+                                  <Money
+                                    value={c.amountThb}
+                                    currency="THB"
+                                    always
+                                  />
                                 )}
                               </td>
                             ) : null}

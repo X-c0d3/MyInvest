@@ -229,15 +229,18 @@ export function Money({
   value,
   currency,
   digits,
+  always = false,
 }: {
   value: number;
   currency: string;
   digits?: number;
+  /** Also label THB amounts, for lists that mix currencies. */
+  always?: boolean;
 }) {
   return (
     <>
       {fmt(value, digits)}
-      {currency !== "THB" ? (
+      {always || currency !== "THB" ? (
         <span className="ml-1 text-xs text-muted">{currency}</span>
       ) : null}
     </>
