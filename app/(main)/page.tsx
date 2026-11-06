@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { CalendarRange, PieChart, Target, Wallet } from "lucide-react";
+import {
+  CalendarRange,
+  ChartPie,
+  PieChart,
+  Target,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import {
   listCashflows,
@@ -24,7 +31,10 @@ import {
   fmtSigned,
   toneClass,
   portfolioEmoji,
+  seriesColor,
 } from "@/lib/format";
+import { PortfolioDonut } from "@/components/portfolio-donut";
+import { GrowthChart } from "@/components/growth-chart";
 import { ActionForm } from "@/components/action-form";
 import {
   Card,
@@ -272,6 +282,27 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             </>
           }
         />
+      </div>
+
+      <div className="mb-4 grid gap-4 lg:grid-cols-3">
+        <Card title="มูลค่าแยกตามพอร์ต" icon={<ChartPie className="size-5" />}>
+          <PortfolioDonut
+            slices={summaries.map((x, i) => ({
+              id: x.portfolio.id,
+              emoji: portfolioEmoji(x.portfolio),
+              name: x.portfolio.name,
+              value: x.valueThb,
+              color: seriesColor(i),
+            }))}
+          />
+        </Card>
+        <Card
+          title="เงินต้นสะสมรายปี (฿)"
+          icon={<TrendingUp className="size-5" />}
+          className="lg:col-span-2"
+        >
+          <GrowthChart years={[...years].reverse()} />
+        </Card>
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
