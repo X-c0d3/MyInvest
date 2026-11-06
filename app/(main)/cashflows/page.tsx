@@ -120,6 +120,14 @@ export default async function CashflowsPage({
         withdraw: w,
         /** เงินเข้าพอร์ตสุทธิ: everything moved in minus withdrawals. */
         netIn: f + r - w,
+        /** The same net amount in the portfolio's own currency (e.g. USD), for non-THB portfolios. */
+        netNative:
+          p.currency === "THB"
+            ? null
+            : rows.reduce(
+                (t, c) => t + (c.type === "deposit" ? c.amount : -c.amount),
+                0,
+              ),
       };
     })
     .filter((x) => x.count > 0);
@@ -326,8 +334,18 @@ export default async function CashflowsPage({
                   />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {portfolioEmoji(x.p)} {x.p.name}
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {portfolioEmoji(x.p)} {x.p.name}
+                        </span>
+                        {x.netNative !== null ? (
+                          <span
+                            className="badge shrink-0 bg-subtle text-[11px] text-foreground tabular-nums"
+                            title={`ยอดสุทธิในสกุล ${x.p.currency} (ฝาก − ถอน)${x.netNative > 0 ? ` · เฉลี่ย ${fmt(x.netIn / x.netNative)} ฿/${x.p.currency}` : ""}`}
+                          >
+                            💵 {fmt(x.netNative)} {x.p.currency}
+                          </span>
+                        ) : null}
                       </span>
                       <span
                         className={`text-sm font-semibold tabular-nums ${x.netIn < 0 ? "text-neg" : ""}`}
