@@ -8,6 +8,7 @@ import {
   CURRENCIES,
   deleteRow,
   getPortfolio,
+  listKnownSymbols,
   saveCashflow,
   saveFxRate,
   saveDividend,
@@ -133,12 +134,26 @@ export async function saveCashflowAction(_: FormState, f: FormData) {
 export async function saveTradeAction(_: FormState, f: FormData) {
   return handle(f, "/trades", (userId) => {
     const symbol = str(f, "symbol").toUpperCase();
-    if (!symbol) throw new ValidationError("กรุณาระบุชื่อหุ้น / ETF / เหรียญ");
+    if (!symbol) throw new ValidationError("กรุณาเลือก Symbol");
+    if (!/^[A-Z0-9][A-Z0-9.\-]*$/.test(symbol))
+      throw new ValidationError("Symbol ใช้ได้เฉพาะ A-Z, 0-9, จุด และขีด");
+    const portfolioId = portfolioField(f, userId).id;
+    const side = oneOf(f, "side", ["buy", "sell"]);
+    // A new symbol can only enter the system through a buy; a sell must be something already held.
+    if (
+      side === "sell" &&
+      !listKnownSymbols(userId).some(
+        (k) => k.portfolioId === portfolioId && k.symbol === symbol,
+      )
+    )
+      throw new ValidationError(
+        `ขาย ${symbol} ไม่ได้ เพราะยังไม่มี ${symbol} ในพอร์ตนี้`,
+      );
     saveTrade(userId, editId(f), {
-      portfolioId: portfolioField(f, userId).id,
+      portfolioId,
       symbol,
       assetType: oneOf(f, "assetType", ["stock", "etf", "crypto"]),
-      side: oneOf(f, "side", ["buy", "sell"]),
+      side,
       quantity: num(f, "quantity", "จำนวน", { allowZero: false }),
       price: num(f, "price", "ราคา"),
       fee: num(f, "fee", "ค่าธรรมเนียม"),
@@ -152,11 +167,20 @@ export async function saveTradeAction(_: FormState, f: FormData) {
 export async function saveDividendAction(_: FormState, f: FormData) {
   return handle(f, "/dividends", (userId) => {
     const symbol = str(f, "symbol").toUpperCase();
-    if (!symbol) throw new ValidationError("กรุณาระบุชื่อหุ้น");
+    if (!symbol) throw new ValidationError("กรุณาเลือกหุ้น");
+    const portfolioId = portfolioField(f, userId).id;
+    // Only symbols already in this portfolio (trades, holdings or past dividends) are allowed.
+    const known = listKnownSymbols(userId).some(
+      (k) => k.portfolioId === portfolioId && k.symbol === symbol,
+    );
+    if (!known)
+      throw new ValidationError(
+        `ไม่พบ ${symbol} ในพอร์ตนี้ ให้เพิ่มหุ้นที่หน้าหลักทรัพย์ที่ถือหรือซื้อ-ขายก่อน`,
+      );
     const taxRate = num(f, "taxRate", "อัตราภาษี");
     if (taxRate > 100) throw new ValidationError("อัตราภาษีต้องไม่เกิน 100%");
     saveDividend(userId, editId(f), {
-      portfolioId: portfolioField(f, userId).id,
+      portfolioId,
       symbol,
       shares: num(f, "shares", "จำนวนหุ้น", { allowZero: false }),
       dps: num(f, "dps", "ปันผลต่อหุ้น"),

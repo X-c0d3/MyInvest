@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import {
   listCashflows,
   listDividends,
+  listKnownSymbols,
   listFxRates,
   listPortfolios,
 } from "@/lib/data";
@@ -29,6 +30,7 @@ import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
 import { DividendChart } from "@/components/dividend-chart";
 import { ChartTabs } from "@/components/chart-tabs";
+import { SymbolSelect } from "@/components/symbol-select";
 import {
   Card,
   EmptyRow,
@@ -62,6 +64,9 @@ export default async function DividendsPage({
   const all = listDividends(user.id);
   const rows = current ? all.filter((d) => d.portfolioId === current) : all;
   const editing = all.find((d) => d.id === pickEdit(sp.edit));
+  const symbolsByPortfolio: Record<number, string[]> = {};
+  for (const k of listKnownSymbols(user.id))
+    (symbolsByPortfolio[k.portfolioId] ??= []).push(k.symbol);
   const portById = new Map(allPortfolios.map((p) => [p.id, p]));
 
   const allCashflows = listCashflows(user.id);
@@ -388,12 +393,12 @@ export default async function DividendsPage({
               />
             </Field>
             <Field label="หุ้น / ETF">
-              <input
-                name="symbol"
+              <SymbolSelect
+                byPortfolio={symbolsByPortfolio}
+                defaultPortfolioId={
+                  editing?.portfolioId ?? current ?? portfolios[0]?.id
+                }
                 defaultValue={editing?.symbol}
-                placeholder="เช่น SYNEX, VOO"
-                className="input uppercase"
-                required
               />
             </Field>
             <Field label="จำนวนหุ้น">

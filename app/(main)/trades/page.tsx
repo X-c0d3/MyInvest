@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import {
   listCashflows,
   listFxRates,
+  listKnownSymbols,
   listPortfolios,
   listPositions,
   listPrices,
@@ -45,6 +46,7 @@ import {
   Stat,
 } from "@/components/ui";
 import { ChartTabs } from "@/components/chart-tabs";
+import { SymbolSelect } from "@/components/symbol-select";
 import { TradeChart, type TradeColumn } from "@/components/trade-chart";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
@@ -67,6 +69,9 @@ export default async function TradesPage({
     listPositions(user.id),
   );
   const pnlByTrade = new Map(realized.map((r) => [r.tradeId, r.pnl]));
+  const symbolsByPortfolio: Record<number, string[]> = {};
+  for (const k of listKnownSymbols(user.id))
+    (symbolsByPortfolio[k.portfolioId] ??= []).push(k.symbol);
   // ---- chart + totals (THB) ----
   const fx = buildFx(portfolios, listCashflows(user.id), listFxRates(user.id));
   const tradeThb = (t: (typeof all)[number]) =>
@@ -269,12 +274,11 @@ export default async function TradesPage({
             </select>
           </Field>
           <Field label="ชื่อย่อ (Symbol)">
-            <input
-              name="symbol"
+            <SymbolSelect
+              allowNew
+              byPortfolio={symbolsByPortfolio}
+              defaultPortfolioId={defaultPort?.id}
               defaultValue={editing?.symbol}
-              placeholder="เช่น IRPC, VOO, AAPL, BTC"
-              className="input uppercase"
-              required
             />
           </Field>
           <Field label="วันที่">

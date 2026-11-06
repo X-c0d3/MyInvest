@@ -160,6 +160,21 @@ export const listPositions = (userId: number) =>
     )
     .all(userId) as Position[];
 
+/**
+ * Every symbol the user already has in a portfolio: from trades, opening positions and past
+ * dividends. Used as the choice list (and the server-side check) for the dividend form.
+ */
+export const listKnownSymbols = (userId: number) =>
+  getDb()
+    .prepare(
+      `SELECT DISTINCT portfolio_id AS portfolioId, symbol FROM (
+         SELECT portfolio_id, symbol FROM trades WHERE user_id = ?
+         UNION SELECT portfolio_id, symbol FROM positions WHERE user_id = ?
+         UNION SELECT portfolio_id, symbol FROM dividends WHERE user_id = ?
+       ) ORDER BY symbol`,
+    )
+    .all(userId, userId, userId) as { portfolioId: number; symbol: string }[];
+
 export function getPortfolio(userId: number, portfolioId: number) {
   const row = getDb()
     .prepare(
