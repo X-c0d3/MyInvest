@@ -309,7 +309,12 @@ export default async function DividendsPage({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                    <span className="font-semibold">{x.symbol}</span>
+                    <span className="font-semibold">
+                      {x.symbol}
+                      <span className="ml-1.5 text-xs font-medium text-muted tabular-nums">
+                        {fmtPct(totalNet > 0 ? (x.net / totalNet) * 100 : 0)}
+                      </span>
+                    </span>
                     <span className="tabular-nums">
                       {fmt(x.net, 0)}{" "}
                       <span className="text-xs text-muted">
@@ -333,8 +338,7 @@ export default async function DividendsPage({
           </ol>
           {bySymbol.length > 0 ? (
             <p className="mt-5 text-xs text-muted">
-              💡 {bySymbol[0].symbol} คิดเป็น{" "}
-              {fmtPct((bySymbol[0].net / totalNet) * 100)} ของปันผลทั้งหมด
+              💡 % = สัดส่วนของปันผลทั้งหมด {fmt(totalNet, 0)} ฿
             </p>
           ) : null}
         </Card>
