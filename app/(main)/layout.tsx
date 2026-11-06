@@ -4,7 +4,7 @@ import { LogOut } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { logout } from "@/app/auth-actions";
 import { Nav, TabBar, TopLinks } from "@/components/nav";
-import { ThemeToggle } from "@/components/theme";
+import { ThemeSwitch } from "@/components/theme";
 import { Logo } from "@/components/logo";
 
 export default function MainLayout({ children }: LayoutProps<"/">) {
@@ -15,19 +15,18 @@ export default function MainLayout({ children }: LayoutProps<"/">) {
         <Link href="/" aria-label="ภาพรวม">
           <Logo />
         </Link>
-        <div className="flex items-center gap-1.5">
-          <ThemeToggle />
+        <div className="flex items-center gap-1">
           <TopLinks />
+          <ThemeSwitch />
         </div>
       </header>
       <TabBar />
 
       {/* Tablet and up: sidebar. */}
-      <aside className="sticky top-0 z-10 hidden h-screen w-56 shrink-0 flex-col gap-4 border-r border-line bg-surface/80 p-4 backdrop-blur md:flex">
+      <aside className="sticky top-0 z-10 hidden h-screen w-48 shrink-0 flex-col gap-4 border-r border-line bg-surface/80 p-3 backdrop-blur md:flex">
         <Logo />
         <Nav />
-        <div className="mt-auto flex flex-col gap-3">
-          <ThemeToggle />
+        <div className="mt-auto">
           <Suspense fallback={null}>
             <UserMenu />
           </Suspense>
@@ -55,7 +54,7 @@ async function UserMenu() {
           <span className="block truncate text-sm font-medium">
             {user.username}
           </span>
-          <span className="block text-xs text-muted">นักลงทุน 🚀</span>
+          <span className="block truncate text-xs text-muted">นักลงทุน 🚀</span>
         </span>
       </Link>
       <form action={logout}>

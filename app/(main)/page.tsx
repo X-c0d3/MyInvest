@@ -118,6 +118,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     0,
   );
   const pastTrading = sum("realizedThb") + sum("untrackedThb");
+  // Dividend % uses the capital of the portfolios that pay dividends (not crypto), the same base
+  // as the dividends page and the owner's sheet.
+  const dividendCapital = shown
+    .filter((x) => x.dividendsThb !== 0)
+    .reduce((t, x) => t + x.capitalThb, 0);
   // % helpers for the stat tiles: P/L against capital, unrealized against the holdings' cost.
   const pctOf = (n: number, base: number) => (base > 0 ? (n / base) * 100 : 0);
   const holdingsCost = shown.reduce((s, x) => s + x.costBasis * x.fxRate, 0);
@@ -276,9 +281,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           hint={
             <>
               <span className="font-semibold text-pos">
-                {fmtPct(pctOf(sum("dividendsThb"), capital))}
+                {fmtPct(pctOf(sum("dividendsThb"), dividendCapital))}
               </span>{" "}
-              ของเงินต้น · ยังอยู่นอกพอร์ต {fmt(sum("dividendsOutsideThb"), 0)}
+              ของเงินต้นพอร์ตหุ้น · ยังอยู่นอกพอร์ต{" "}
+              {fmt(sum("dividendsOutsideThb"), 0)}
             </>
           }
         />
@@ -287,12 +293,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
         <Card title="มูลค่าแยกตามพอร์ต" icon={<ChartPie className="size-5" />}>
           <PortfolioDonut
+            small
             slices={summaries.map((x, i) => ({
               id: x.portfolio.id,
               emoji: portfolioEmoji(x.portfolio),
               name: x.portfolio.name,
               value: x.valueThb,
               color: seriesColor(i),
+              info: [
+                ["ต้นทุนหุ้น", fmt(x.costBasis * x.fxRate)],
+                [
+                  "กำไร/ขาดทุน",
+                  `${fmtSigned(x.unrealizedThb)} (${fmtPct(pctOf(x.unrealizedThb, x.costBasis * x.fxRate))})`,
+                ],
+                [
+                  "เงินสดในโบรก",
+                  x.cashEntered ? fmt(x.cashThb) : "ยังไม่ได้ใส่",
+                ],
+              ] as [string, string][],
             }))}
           />
         </Card>

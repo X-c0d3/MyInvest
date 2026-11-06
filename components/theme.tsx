@@ -6,6 +6,9 @@ import { THEME_KEY as KEY } from "@/lib/theme-script";
 
 export type ThemePref = "light" | "dark" | "system";
 
+/** Fired after ThemeSwitch stores a new choice, so a ThemeToggle on the same page can follow. */
+const THEME_EVENT = "myinvest-theme-change";
+
 const OPTIONS: { value: ThemePref; label: string; Icon: typeof Sun }[] = [
   { value: "light", label: "สว่าง", Icon: Sun },
   { value: "dark", label: "มืด", Icon: Moon },
@@ -16,13 +19,18 @@ export function ThemeToggle() {
   const [pref, setPref] = useState<ThemePref | null>(null);
 
   useEffect(() => {
-    let stored: ThemePref = "system";
-    try {
-      stored = (localStorage.getItem(KEY) as ThemePref) || "system";
-    } catch {}
+    const read = () => {
+      let stored: ThemePref = "system";
+      try {
+        stored = (localStorage.getItem(KEY) as ThemePref) || "system";
+      } catch {}
+      setPref(stored);
+    };
     // Sync from localStorage, which only exists in the browser.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPref(stored);
+    read();
+    // The one-button switch elsewhere on the page announces its changes.
+    window.addEventListener(THEME_EVENT, read);
+    return () => window.removeEventListener(THEME_EVENT, read);
   }, []);
 
   const choose = (value: ThemePref) => {
@@ -58,5 +66,36 @@ export function ThemeToggle() {
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * One-button light/dark switch for the sidebar, phone top bar and login pages.
+ * The first visit follows the device (system); a click stores the opposite of what is showing.
+ * The full three-way choice (incl. ตามระบบ) stays on the account page.
+ */
+export function ThemeSwitch() {
+  const toggle = () => {
+    const next =
+      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    try {
+      localStorage.setItem(KEY, next);
+    } catch {}
+    (window as unknown as { __applyTheme?: () => void }).__applyTheme?.();
+    window.dispatchEvent(new Event(THEME_EVENT));
+  };
+
+  // The icon comes from the dark: variant, so it is right before hydration and needs no state.
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      className="icon-btn size-9"
+      title="สลับธีมสว่าง / มืด"
+    >
+      <Moon className="size-[18px] dark:hidden" />
+      <Sun className="hidden size-[18px] dark:block" />
+      <span className="sr-only">สลับธีมสว่าง / มืด</span>
+    </button>
   );
 }

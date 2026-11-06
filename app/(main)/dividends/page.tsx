@@ -12,13 +12,22 @@ import {
   dividendGross,
   dividendNet,
   dividendTax,
+  yearOf,
   yearlySummary,
 } from "@/lib/calc";
 import { saveDividendAction } from "@/app/actions";
-import { fmt, fmtDate, fmtPct, fmtQty, portfolioEmoji } from "@/lib/format";
+import {
+  fmt,
+  fmtDate,
+  fmtPct,
+  fmtQty,
+  portfolioEmoji,
+  seriesColor,
+} from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
 import { DividendChart } from "@/components/dividend-chart";
+import { ChartTabs } from "@/components/chart-tabs";
 import {
   Card,
   EmptyRow,
@@ -115,6 +124,28 @@ export default async function DividendsPage({
   }
   const bySymbol = [...symbolTotals.values()].sort((a, b) => b.net - a.net);
 
+  // Chart segments: the top payers keep a fixed color by overall rank; the rest fold into "อื่นๆ".
+  const TOP_STACKS = 5;
+  const topSymbols = bySymbol.slice(0, TOP_STACKS).map((x) => x.symbol);
+  const stacks = [
+    ...topSymbols.map((sym, i) => ({
+      key: sym,
+      label: sym,
+      color: seriesColor(i),
+    })),
+    ...(bySymbol.length > TOP_STACKS
+      ? [{ key: "__other", label: "อื่นๆ", color: "var(--muted)" }]
+      : []),
+  ];
+  const stackParts: Record<number, Record<string, number>> = {};
+  for (const d of rows) {
+    const y = yearOf(d.paidDate);
+    const key = topSymbols.includes(d.symbol) ? d.symbol : "__other";
+    const bucket = (stackParts[y] ??= {});
+    bucket[key] =
+      (bucket[key] ?? 0) + dividendNet(d) * fx.rateOf(d.portfolioId);
+  }
+
   return (
     <>
       <PageHeader
@@ -138,6 +169,16 @@ export default async function DividendsPage({
           label="ปันผลสุทธิสะสม (฿)"
           value={fmt(totalNet)}
           tone="text-pos"
+          hint={
+            capitalBase > 0 ? (
+              <>
+                <span className="font-semibold text-pos">
+                  {fmtPct((totalNet / capitalBase) * 100)}
+                </span>{" "}
+                ของเงินต้นปัจจุบัน
+              </>
+            ) : undefined
+          }
         />
         <Stat
           emoji="🧾"
@@ -163,58 +204,88 @@ export default async function DividendsPage({
       </div>
 
       <div className="mb-4 grid gap-4 xl:grid-cols-3">
-        <Card
-          title="ปันผลรายปี (฿)"
-          icon={<CalendarRange className="size-5" />}
-          className="xl:col-span-2"
-          action={
-            best ? (
-              <span className="badge bg-accent-soft text-accent">
-                🏆 สูงสุดปี {best.year}: {fmt(best.dividendNet, 0)}
-              </span>
-            ) : null
-          }
-        >
-          {years.length > 0 ? (
-            <div className="mb-5 grid grid-cols-3 gap-3">
-              {[
-                ["📅", "เฉลี่ยต่อปี", fmt(avgPerYear, 0)],
-                ["🗓️", `ปี ${latest!.year}`, fmt(latest!.dividendNet, 0)],
-                [
-                  latestChange === null
-                    ? "➖"
-                    : latestChange >= 0
-                      ? "📈"
-                      : "📉",
-                  "เทียบปีก่อน",
-                  latestChange === null
-                    ? "-"
-                    : `${latestChange >= 0 ? "+" : "−"}${fmtPct(Math.abs(latestChange))}`,
-                ],
-              ].map(([emoji, label, value]) => (
-                <div
-                  key={label}
-                  className="rounded-xl bg-surface-2 px-3 py-2.5"
-                >
-                  <p className="text-xs text-muted">
-                    {emoji} {label}
-                  </p>
-                  <p
-                    className={`mt-0.5 font-bold tabular-nums ${
-                      label === "เทียบปีก่อน" && latestChange !== null
-                        ? latestChange >= 0
-                          ? "text-pos"
-                          : "text-neg"
-                        : ""
-                    }`}
+        <Card className="xl:col-span-2">
+          <ChartTabs
+            title={
+              <>
+                <CalendarRange className="size-5 text-accent" /> ปันผลรายปี (฿)
+              </>
+            }
+            action={
+              best ? (
+                <span className="badge bg-accent-soft text-accent">
+                  🏆 สูงสุดปี {best.year}: {fmt(best.dividendNet, 0)}
+                </span>
+              ) : null
+            }
+            tabs={[
+              {
+                key: "bar",
+                label: "📊 แท่ง (แยกหุ้น)",
+                content: (
+                  <DividendChart
+                    years={years}
+                    capital={capitalBase}
+                    stacks={stacks}
+                    parts={stackParts}
+                  />
+                ),
+              },
+              {
+                key: "line",
+                label: "📈 เส้น (รวมต่อปี)",
+                content: (
+                  <DividendChart
+                    view="line"
+                    years={years}
+                    capital={capitalBase}
+                    stacks={stacks}
+                    parts={stackParts}
+                  />
+                ),
+              },
+            ]}
+          >
+            {years.length > 0 ? (
+              <div className="mb-5 grid grid-cols-3 gap-3">
+                {[
+                  ["📅", "เฉลี่ยต่อปี", fmt(avgPerYear, 0)],
+                  ["🗓️", `ปี ${latest!.year}`, fmt(latest!.dividendNet, 0)],
+                  [
+                    latestChange === null
+                      ? "➖"
+                      : latestChange >= 0
+                        ? "📈"
+                        : "📉",
+                    "เทียบปีก่อน",
+                    latestChange === null
+                      ? "-"
+                      : `${latestChange >= 0 ? "+" : "−"}${fmtPct(Math.abs(latestChange))}`,
+                  ],
+                ].map(([emoji, label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl bg-surface-2 px-3 py-2.5"
                   >
-                    {value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <DividendChart years={years} capital={capitalBase} />
+                    <p className="text-xs text-muted">
+                      {emoji} {label}
+                    </p>
+                    <p
+                      className={`mt-0.5 font-bold tabular-nums ${
+                        label === "เทียบปีก่อน" && latestChange !== null
+                          ? latestChange >= 0
+                            ? "text-pos"
+                            : "text-neg"
+                          : ""
+                      }`}
+                    >
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </ChartTabs>
         </Card>
 
         <Card
@@ -248,8 +319,12 @@ export default async function DividendsPage({
                   </div>
                   <div className="h-1.5 overflow-hidden rounded-full bg-subtle">
                     <div
-                      className="h-full rounded-full bg-accent"
-                      style={{ width: `${(x.net / bySymbol[0].net) * 100}%` }}
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${(x.net / bySymbol[0].net) * 100}%`,
+                        background:
+                          i < TOP_STACKS ? seriesColor(i) : "var(--muted)",
+                      }}
                     />
                   </div>
                 </div>

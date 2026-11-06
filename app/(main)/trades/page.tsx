@@ -1,14 +1,17 @@
-import { ListOrdered } from "lucide-react";
+import { BarChart3, ChartPie, ListOrdered } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import {
+  listCashflows,
+  listFxRates,
   listPortfolios,
   listPositions,
   listPrices,
   listTrades,
 } from "@/lib/data";
-import { computePositions } from "@/lib/calc";
+import { buildFx, computePositions } from "@/lib/calc";
 import { saveTradeAction } from "@/app/actions";
 import {
+  fmt,
   fmtDate,
   fmtPrice,
   fmtQty,
@@ -16,7 +19,9 @@ import {
   toneClass,
   portfolioEmoji,
   ASSET_LABEL,
+  seriesColor,
 } from "@/lib/format";
+import { PortfolioDonut, type DonutSlice } from "@/components/portfolio-donut";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
 import {
@@ -36,7 +41,10 @@ import {
   MobileItem,
   MobileList,
   ModalDelete,
+  Stat,
 } from "@/components/ui";
+import { ChartTabs } from "@/components/chart-tabs";
+import { TradeChart, type TradeColumn } from "@/components/trade-chart";
 
 // Per-user data read from SQLite on every request; blocking on it is fast and simpler than streaming.
 export const instant = false;
@@ -58,6 +66,113 @@ export default async function TradesPage({
     listPositions(user.id),
   );
   const pnlByTrade = new Map(realized.map((r) => [r.tradeId, r.pnl]));
+  // ---- chart + totals (THB) ----
+  const fx = buildFx(portfolios, listCashflows(user.id), listFxRates(user.id));
+  const tradeThb = (t: (typeof all)[number]) =>
+    (t.quantity * t.price + (t.side === "buy" ? t.fee : -t.fee)) *
+    fx.rateOf(t.portfolioId);
+  const pnlThb = (t: (typeof all)[number]) =>
+    (pnlByTrade.get(t.id) ?? 0) * fx.rateOf(t.portfolioId);
+  const totalBuy = rows
+    .filter((t) => t.side === "buy")
+    .reduce((s, t) => s + tradeThb(t), 0);
+  const totalSell = rows
+    .filter((t) => t.side === "sell")
+    .reduce((s, t) => s + tradeThb(t), 0);
+  const totalRealized = rows.reduce((s, t) => s + pnlThb(t), 0);
+  const sellCount = rows.filter((t) => t.side === "sell").length;
+
+  const column = (
+    key: string,
+    label: string,
+    title: string,
+    inPeriod: (d: string) => boolean,
+  ): TradeColumn => {
+    const xs = rows.filter((t) => inPeriod(t.date));
+    return {
+      key,
+      label,
+      title,
+      buy: xs
+        .filter((t) => t.side === "buy")
+        .reduce((s, t) => s + tradeThb(t), 0),
+      sell: xs
+        .filter((t) => t.side === "sell")
+        .reduce((s, t) => s + tradeThb(t), 0),
+      realized: xs.reduce((s, t) => s + pnlThb(t), 0),
+      count: xs.length,
+    };
+  };
+  // Donut: total trade value (มูลค่ารวม) per symbol in THB, top payers + "อื่นๆ".
+  const bySymbolMap = new Map<
+    string,
+    { value: number; emoji: string; buys: number; sells: number }
+  >();
+  for (const t of rows) {
+    const x = bySymbolMap.get(t.symbol) ?? {
+      value: 0,
+      emoji: ASSET_LABEL[t.assetType].emoji,
+      buys: 0,
+      sells: 0,
+    };
+    x.value += tradeThb(t);
+    if (t.side === "buy") x.buys += 1;
+    else x.sells += 1;
+    bySymbolMap.set(t.symbol, x);
+  }
+  const symbolsRanked = [...bySymbolMap.entries()].sort(
+    (a, b) => b[1].value - a[1].value,
+  );
+  const TOP = 5;
+  const symbolSlices: DonutSlice[] = [
+    ...symbolsRanked.slice(0, TOP).map(([sym, x], i) => ({
+      id: i,
+      emoji: x.emoji,
+      name: sym,
+      value: x.value,
+      color: seriesColor(i),
+      info: [
+        ["ซื้อ", `${x.buys} ครั้ง`],
+        ["ขาย", `${x.sells} ครั้ง`],
+      ] as [string, string][],
+    })),
+    ...(symbolsRanked.length > TOP
+      ? [
+          {
+            id: TOP,
+            emoji: "➕",
+            name: `อื่นๆ (${symbolsRanked.length - TOP})`,
+            value: symbolsRanked
+              .slice(TOP)
+              .reduce((s, [, x]) => s + x.value, 0),
+            color: "var(--muted)",
+            info: symbolsRanked
+              .slice(TOP)
+              .map(([sym, x]) => [sym, fmt(x.value, 0)] as [string, string]),
+          },
+        ]
+      : []),
+  ];
+
+  const now = today();
+  const thisYear = Number(now.slice(0, 4));
+  const firstYear = rows.length
+    ? Math.min(...rows.map((t) => Number(t.date.slice(0, 4))))
+    : thisYear;
+  const yearCols = Array.from({ length: thisYear - firstYear + 1 }, (_, i) => {
+    const y = String(firstYear + i);
+    return column(y, y, `ปี ${y}`, (d) => d.startsWith(y));
+  });
+  const monthName = new Intl.DateTimeFormat("th-TH", { month: "short" });
+  const monthCols = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(Date.UTC(thisYear, Number(now.slice(5, 7)) - 12 + i, 1));
+    const ym = d.toISOString().slice(0, 7);
+    const name = monthName.format(d);
+    return column(ym, name, `${name} ${d.getUTCFullYear()}`, (x) =>
+      x.startsWith(ym),
+    );
+  });
+
   const defaultPort = portById.get(
     editing?.portfolioId ?? current ?? portfolios[0]?.id ?? 0,
   );
@@ -189,6 +304,60 @@ export default async function TradesPage({
           />
         ) : null}
       </FormModal>
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <Stat
+          emoji="🟢"
+          label="ซื้อรวม (฿)"
+          value={fmt(totalBuy)}
+          hint="รวมค่าธรรมเนียม"
+        />
+        <Stat
+          emoji="🔴"
+          label="ขายรวม (฿)"
+          value={fmt(totalSell)}
+          hint="หักค่าธรรมเนียมแล้ว"
+        />
+        <Stat
+          emoji={totalRealized >= 0 ? "🎉" : "📉"}
+          label="กำไรที่ขายแล้ว (฿)"
+          value={sellCount ? fmtSigned(totalRealized) : "-"}
+          tone={sellCount ? toneClass(totalRealized) : ""}
+          hint={`จากการขาย ${sellCount} รายการ`}
+        />
+        <Stat emoji="🧾" label="จำนวนรายการ" value={`${rows.length} รายการ`} />
+      </div>
+
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <ChartTabs
+            title={
+              <>
+                <BarChart3 className="size-5 text-accent" /> ซื้อ-ขายตามช่วงเวลา
+                (฿)
+              </>
+            }
+            tabs={[
+              {
+                key: "year",
+                label: "รายปี",
+                content: <TradeChart cols={yearCols} />,
+              },
+              {
+                key: "month",
+                label: "12 เดือนล่าสุด",
+                content: <TradeChart cols={monthCols} />,
+              },
+            ]}
+          />
+        </Card>
+        <Card
+          title="สัดส่วนมูลค่าตาม Symbol (฿)"
+          icon={<ChartPie className="size-5" />}
+        >
+          <PortfolioDonut slices={symbolSlices} />
+        </Card>
+      </div>
 
       <Card title="ประวัติ" icon={<ListOrdered className="size-5" />}>
         <MobileList

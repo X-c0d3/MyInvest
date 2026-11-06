@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { login, register, type AuthState } from "@/app/auth-actions";
 import { Logo } from "./logo";
-import { ThemeToggle } from "./theme";
+import { ThemeSwitch } from "./theme";
 
 const FEATURES = [
   ["📈", "ซื้อ-ขาย หุ้นไทย ETF หุ้นต่างประเทศ และ Crypto"],
@@ -50,7 +50,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
       <div className="relative flex items-center justify-center p-4">
         <div className="absolute top-4 right-4">
-          <ThemeToggle />
+          <ThemeSwitch />
         </div>
         <form action={formAction} className="w-full max-w-sm space-y-5">
           <div className="space-y-6">

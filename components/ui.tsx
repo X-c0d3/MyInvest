@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { AssetType, Portfolio } from "@/lib/data";
 import { ASSET_LABEL, fmt, portfolioEmoji } from "@/lib/format";
 import { DeleteButton } from "./delete-button";
+import { ThemeSwitch } from "./theme";
 import type { DeletableTable } from "@/lib/data";
 
 export function PageHeader({
@@ -31,7 +32,13 @@ export function PageHeader({
           {subtitle ? <p className="text-xs text-muted">{subtitle}</p> : null}
         </div>
       </div>
-      {children}
+      {/* Tablet and up: page actions, then the theme switch at the top-right corner. */}
+      <div className="flex flex-wrap items-center gap-3">
+        {children}
+        <span className="hidden md:inline-flex">
+          <ThemeSwitch />
+        </span>
+      </div>
     </div>
   );
 }
