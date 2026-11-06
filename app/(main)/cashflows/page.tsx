@@ -26,6 +26,7 @@ import {
   fmtSigned,
   portfolioEmoji,
   seriesColor,
+  BASE_CURRENCY,
 } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
@@ -351,7 +352,11 @@ export default async function CashflowsPage({
                         className={`text-sm font-semibold tabular-nums ${x.netIn < 0 ? "text-neg" : ""}`}
                         title="เงินเข้าพอร์ตสุทธิ = เงินใหม่ + นำกลับมาลงทุน − ถอน"
                       >
-                        {fmt(x.netIn)}
+                        <Money
+                          value={x.netIn}
+                          currency={BASE_CURRENCY}
+                          always
+                        />
                       </span>
                     </span>
                     <span className="flex justify-between gap-2 text-xs text-muted tabular-nums">

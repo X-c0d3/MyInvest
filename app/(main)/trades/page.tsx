@@ -19,6 +19,7 @@ import {
   toneClass,
   portfolioEmoji,
   ASSET_LABEL,
+  BASE_CURRENCY,
   seriesColor,
 } from "@/lib/format";
 import { PortfolioDonut, type DonutSlice } from "@/components/portfolio-donut";
@@ -114,6 +115,9 @@ export default async function TradesPage({
       qtyIn: number;
       qtyOut: number;
       unit: string;
+      /** Value in the portfolio's own currency; currency is null when a symbol spans currencies. */
+      native: number;
+      currency: string | null;
     }
   >();
   for (const t of rows) {
@@ -125,7 +129,12 @@ export default async function TradesPage({
       qtyIn: 0,
       qtyOut: 0,
       unit: t.assetType === "crypto" ? "เหรียญ" : "หุ้น",
+      native: 0,
+      currency: portById.get(t.portfolioId)?.currency ?? BASE_CURRENCY,
     };
+    const ccy = portById.get(t.portfolioId)?.currency ?? BASE_CURRENCY;
+    if (x.currency !== ccy) x.currency = null;
+    x.native += t.quantity * t.price + (t.side === "buy" ? t.fee : -t.fee);
     x.value += tradeThb(t);
     if (t.side === "buy") {
       x.buys += 1;
@@ -147,6 +156,10 @@ export default async function TradesPage({
       name: sym,
       value: x.value,
       color: seriesColor(i),
+      native:
+        x.currency && x.currency !== BASE_CURRENCY
+          ? { value: x.native, currency: x.currency }
+          : undefined,
       // Volume: shares (or coins) bought minus sold, i.e. what these trades leave you holding.
       sub: `${fmtQty(x.qtyIn - x.qtyOut)} ${x.unit}`,
       info: [

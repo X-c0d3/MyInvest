@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { compact } from "@/lib/chart";
-import { fmt, fmtPct } from "@/lib/format";
+import { BASE_CURRENCY, fmt, fmtPct } from "@/lib/format";
 
 export type DonutSlice = {
   id: number;
@@ -12,6 +12,8 @@ export type DonutSlice = {
   value: number;
   /** Fixed color from seriesColor() (or --muted for "อื่นๆ"), so it matches the other charts. */
   color: string;
+  /** The same value in the item's own currency, when that is not the base currency. */
+  native?: { value: number; currency: string };
   /** Short muted text after the name in the legend, e.g. a share count. */
   sub?: string;
   /** Extra tooltip lines, e.g. trade counts or the names folded into "อื่นๆ". */
@@ -146,8 +148,14 @@ export function PortfolioDonut({
               {hot.emoji} {hot.name}
             </p>
             <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 tabular-nums">
-              <dt className="text-muted">มูลค่า (฿)</dt>
+              <dt className="text-muted">มูลค่า ({BASE_CURRENCY})</dt>
               <dd className="text-right font-semibold">{fmt(hot.value)}</dd>
+              {hot.native ? (
+                <>
+                  <dt className="text-muted">มูลค่า ({hot.native.currency})</dt>
+                  <dd className="text-right">{fmt(hot.native.value)}</dd>
+                </>
+              ) : null}
               <dt className="text-muted">สัดส่วน</dt>
               <dd className="text-right">{fmtPct(hot.share)}</dd>
               {hot.info?.map(([label, value]) => (
@@ -188,6 +196,9 @@ export function PortfolioDonut({
               </span>
               <span className="font-semibold tabular-nums">
                 {fmt(a.value, 0)}
+                <span className="ml-1 text-xs font-normal text-muted">
+                  {BASE_CURRENCY}
+                </span>
               </span>
             </div>
             <div className="mt-1 flex items-center gap-2 pl-[18px]">
@@ -200,7 +211,12 @@ export function PortfolioDonut({
                   }}
                 />
               </div>
-              <span className="w-12 text-right text-xs text-muted tabular-nums">
+              <span className="text-right text-xs whitespace-nowrap text-muted tabular-nums">
+                {a.native ? (
+                  <span className="mr-1.5">
+                    {fmt(a.native.value)} {a.native.currency} ·
+                  </span>
+                ) : null}
                 {fmtPct(a.share)}
               </span>
             </div>

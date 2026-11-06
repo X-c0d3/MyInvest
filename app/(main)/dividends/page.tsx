@@ -23,6 +23,7 @@ import {
   fmtQty,
   portfolioEmoji,
   seriesColor,
+  BASE_CURRENCY,
 } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
@@ -110,14 +111,26 @@ export default async function DividendsPage({
 
   const symbolTotals = new Map<
     string,
-    { symbol: string; net: number; count: number }
+    {
+      symbol: string;
+      net: number;
+      count: number;
+      /** Net in the paying portfolio's own currency; currency is null when it spans currencies. */
+      native: number;
+      currency: string | null;
+    }
   >();
   for (const d of rows) {
+    const ccy = portById.get(d.portfolioId)?.currency ?? BASE_CURRENCY;
     const x = symbolTotals.get(d.symbol) ?? {
       symbol: d.symbol,
       net: 0,
       count: 0,
+      native: 0,
+      currency: ccy,
     };
+    if (x.currency !== ccy) x.currency = null;
+    x.native += dividendNet(d);
     x.net += dividendNet(d) * fx.rateOf(d.portfolioId);
     x.count += 1;
     symbolTotals.set(d.symbol, x);
@@ -316,8 +329,14 @@ export default async function DividendsPage({
                       </span>
                     </span>
                     <span className="tabular-nums">
-                      {fmt(x.net, 0)}{" "}
+                      {fmt(x.net, 0)}
+                      <span className="ml-1 text-xs text-muted">
+                        {BASE_CURRENCY}
+                      </span>{" "}
                       <span className="text-xs text-muted">
+                        {x.currency && x.currency !== BASE_CURRENCY
+                          ? `· ${fmt(x.native)} ${x.currency} `
+                          : ""}
                         · {x.count} ครั้ง
                       </span>
                     </span>

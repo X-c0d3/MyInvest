@@ -21,6 +21,7 @@ import {
   portfolioEmoji,
   toneClass,
   ASSET_LABEL,
+  BASE_CURRENCY,
 } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
@@ -152,7 +153,7 @@ export default async function HoldingsPage({
                 icon={ASSET_LABEL[h.assetType].emoji}
                 title={h.symbol}
                 subtitle={`${fmtQty(h.quantity)} หุ้น · ทุน ${fmtPrice(h.avgCost)}${h.marketPrice === null ? "" : ` · ราคา ${fmtPrice(h.marketPrice)}`}${showPortfolio && p ? ` · ${portfolioEmoji(p)}` : ""}`}
-                amount={<Money value={h.marketValue} currency={ccy} />}
+                amount={<Money value={h.marketValue} currency={ccy} always />}
                 meta={
                   h.marketPrice === null ? (
                     "ใส่ราคาล่าสุด"
@@ -231,10 +232,10 @@ export default async function HoldingsPage({
                       )}
                     </td>
                     <td className="num" data-label="ต้นทุนรวม">
-                      <Money value={h.costBasis} currency={ccy} />
+                      <Money value={h.costBasis} currency={ccy} always />
                     </td>
                     <td className="num font-medium" data-label="มูลค่า">
-                      <Money value={h.marketValue} currency={ccy} />
+                      <Money value={h.marketValue} currency={ccy} always />
                     </td>
                     <td
                       className={`num font-semibold ${toneClass(h.unrealized)}`}
@@ -279,10 +280,10 @@ export default async function HoldingsPage({
                   <td />
                   <td />
                   <td className="num px-3 py-2.5" data-label="ต้นทุนรวม">
-                    {fmt(cost)}
+                    <Money value={cost} currency={BASE_CURRENCY} always />
                   </td>
                   <td className="num px-3 py-2.5" data-label="มูลค่า">
-                    {fmt(value)}
+                    <Money value={value} currency={BASE_CURRENCY} always />
                   </td>
                   <td
                     className={`num px-3 py-2.5 ${toneClass(pl)}`}

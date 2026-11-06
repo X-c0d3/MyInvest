@@ -32,6 +32,7 @@ import {
   toneClass,
   portfolioEmoji,
   seriesColor,
+  BASE_CURRENCY,
 } from "@/lib/format";
 import { PortfolioDonut } from "@/components/portfolio-donut";
 import { GrowthChart } from "@/components/growth-chart";
@@ -44,6 +45,7 @@ import {
   pickPortfolio,
   Stat,
   MobileItem,
+  Money,
   MobileList,
 } from "@/components/ui";
 
@@ -407,7 +409,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                         {a.label}
                       </p>
                       <p className="font-semibold tabular-nums">
-                        {fmt(a.value)}
+                        <Money
+                          value={a.value}
+                          currency={BASE_CURRENCY}
+                          always
+                        />
                       </p>
                     </div>
                     <span className="text-sm font-semibold text-muted tabular-nums">
@@ -498,15 +504,34 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                     </td>
                     <td className="num" data-label="ต้นทุน (฿)">
                       {fmt(cost)}
+                      <span className="ml-1 text-xs font-normal text-muted">
+                        {BASE_CURRENCY}
+                      </span>
+                      {s.portfolio.currency !== BASE_CURRENCY ? (
+                        <span className="block text-xs font-normal text-muted">
+                          {fmt(s.costBasis)} {s.portfolio.currency}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="num font-medium" data-label="มูลค่าตลาด (฿)">
                       {fmt(market)}
+                      <span className="ml-1 text-xs font-normal text-muted">
+                        {BASE_CURRENCY}
+                      </span>
+                      {s.portfolio.currency !== BASE_CURRENCY ? (
+                        <span className="block text-xs font-normal text-muted">
+                          {fmt(s.holdingsValue)} {s.portfolio.currency}
+                        </span>
+                      ) : null}
                     </td>
                     <td
                       className={`num font-semibold ${toneClass(s.unrealizedThb)}`}
                       data-label="กำไร/ขาดทุน (฿)"
                     >
-                      {fmtSigned(s.unrealizedThb)}{" "}
+                      {fmtSigned(s.unrealizedThb)}
+                      <span className="ml-1 text-xs font-normal text-muted">
+                        {BASE_CURRENCY}
+                      </span>{" "}
                       <span className="text-xs">
                         ({fmtPct(cost > 0 ? (s.unrealizedThb / cost) * 100 : 0)}
                         )
@@ -516,7 +541,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                       className="num text-muted"
                       data-label="💵 เงินสดในโบรก (฿)"
                     >
-                      {s.cashEntered ? fmt(s.cashThb) : "ยังไม่ได้ใส่"}
+                      {s.cashEntered ? (
+                        <>
+                          {fmt(s.cashThb)}
+                          <span className="ml-1 text-xs font-normal text-muted">
+                            {BASE_CURRENCY}
+                          </span>
+                        </>
+                      ) : (
+                        "ยังไม่ได้ใส่"
+                      )}
                     </td>
                   </tr>
                 );
@@ -528,15 +562,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                   <td className="px-3 py-2.5">รวม</td>
                   <td className="num px-3 py-2.5" data-label="ต้นทุน (฿)">
                     {fmt(tableCost)}
+                    <span className="ml-1 text-xs font-normal text-muted">
+                      {BASE_CURRENCY}
+                    </span>
                   </td>
                   <td className="num px-3 py-2.5" data-label="มูลค่าตลาด (฿)">
                     {fmt(tableMarket)}
+                    <span className="ml-1 text-xs font-normal text-muted">
+                      {BASE_CURRENCY}
+                    </span>
                   </td>
                   <td
                     className={`num px-3 py-2.5 ${toneClass(tableMarket - tableCost)}`}
                     data-label="กำไร/ขาดทุน (฿)"
                   >
-                    {fmtSigned(tableMarket - tableCost)}{" "}
+                    {fmtSigned(tableMarket - tableCost)}
+                    <span className="ml-1 text-xs font-normal text-muted">
+                      {BASE_CURRENCY}
+                    </span>{" "}
                     <span className="text-xs">
                       (
                       {fmtPct(
@@ -552,6 +595,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
                     data-label="💵 เงินสดในโบรก (฿)"
                   >
                     {fmt(summaries.reduce((t, x) => t + x.cashThb, 0))}
+                    <span className="ml-1 text-xs font-normal text-muted">
+                      {BASE_CURRENCY}
+                    </span>
                   </td>
                 </tr>
               </tfoot>

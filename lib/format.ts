@@ -1,3 +1,6 @@
+/** Currency every cross-portfolio total is converted to (via buildFx). */
+export const BASE_CURRENCY = "THB";
+
 import type { AssetType, CashSource, Portfolio } from "./data";
 
 const nf = (digits: number) =>
