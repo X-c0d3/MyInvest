@@ -12,6 +12,8 @@ export type DonutSlice = {
   value: number;
   /** Fixed color from seriesColor() (or --muted for "อื่นๆ"), so it matches the other charts. */
   color: string;
+  /** Short muted text after the name in the legend, e.g. a share count. */
+  sub?: string;
   /** Extra tooltip lines, e.g. trade counts or the names folded into "อื่นๆ". */
   info?: [label: string, value: string][];
 };
@@ -178,6 +180,11 @@ export function PortfolioDonut({
               />
               <span className="min-w-0 flex-1 truncate font-medium">
                 {a.emoji} {a.name}
+                {a.sub ? (
+                  <span className="ml-1.5 text-xs font-normal text-muted tabular-nums">
+                    {a.sub}
+                  </span>
+                ) : null}
               </span>
               <span className="font-semibold tabular-nums">
                 {fmt(a.value, 0)}

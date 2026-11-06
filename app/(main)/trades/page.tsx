@@ -106,7 +106,15 @@ export default async function TradesPage({
   // Donut: total trade value (มูลค่ารวม) per symbol in THB, top payers + "อื่นๆ".
   const bySymbolMap = new Map<
     string,
-    { value: number; emoji: string; buys: number; sells: number }
+    {
+      value: number;
+      emoji: string;
+      buys: number;
+      sells: number;
+      qtyIn: number;
+      qtyOut: number;
+      unit: string;
+    }
   >();
   for (const t of rows) {
     const x = bySymbolMap.get(t.symbol) ?? {
@@ -114,10 +122,18 @@ export default async function TradesPage({
       emoji: ASSET_LABEL[t.assetType].emoji,
       buys: 0,
       sells: 0,
+      qtyIn: 0,
+      qtyOut: 0,
+      unit: t.assetType === "crypto" ? "เหรียญ" : "หุ้น",
     };
     x.value += tradeThb(t);
-    if (t.side === "buy") x.buys += 1;
-    else x.sells += 1;
+    if (t.side === "buy") {
+      x.buys += 1;
+      x.qtyIn += t.quantity;
+    } else {
+      x.sells += 1;
+      x.qtyOut += t.quantity;
+    }
     bySymbolMap.set(t.symbol, x);
   }
   const symbolsRanked = [...bySymbolMap.entries()].sort(
@@ -131,9 +147,12 @@ export default async function TradesPage({
       name: sym,
       value: x.value,
       color: seriesColor(i),
+      // Volume: shares (or coins) bought minus sold, i.e. what these trades leave you holding.
+      sub: `${fmtQty(x.qtyIn - x.qtyOut)} ${x.unit}`,
       info: [
-        ["ซื้อ", `${x.buys} ครั้ง`],
-        ["ขาย", `${x.sells} ครั้ง`],
+        ["ซื้อ", `${x.buys} ครั้ง · ${fmtQty(x.qtyIn)} ${x.unit}`],
+        ["ขาย", `${x.sells} ครั้ง · ${fmtQty(x.qtyOut)} ${x.unit}`],
+        ["คงเหลือ", `${fmtQty(x.qtyIn - x.qtyOut)} ${x.unit}`],
       ] as [string, string][],
     })),
     ...(symbolsRanked.length > TOP
