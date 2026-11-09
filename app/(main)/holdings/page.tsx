@@ -3,13 +3,20 @@ import { Banknote, Briefcase, Pencil } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import {
   listCashflows,
+  listDividends,
   listFxRates,
   listPortfolios,
   listPositions,
   listPrices,
   listTrades,
 } from "@/lib/data";
-import { buildFx, computePositions } from "@/lib/calc";
+import {
+  buildFx,
+  computePositions,
+  dividendGross,
+  dividendNet,
+  dividendTax,
+} from "@/lib/calc";
 import { saveCashBalanceAction, savePositionAction } from "@/app/actions";
 import {
   fmt,
@@ -25,6 +32,11 @@ import {
 } from "@/lib/format";
 import { ActionForm } from "@/components/action-form";
 import { FormModal } from "@/components/form-modal";
+import {
+  SymbolHistory,
+  type HistoryDividend,
+  type HistoryTrade,
+} from "@/components/symbol-history";
 import {
   AssetBadge,
   Card,
@@ -55,12 +67,54 @@ export default async function HoldingsPage({
   const cashflows = listCashflows(user.id);
   const trades = listTrades(user.id);
   const fx = buildFx(portfolios, cashflows, listFxRates(user.id));
-  const { holdings: all } = computePositions(
+  const { holdings: all, skipped } = computePositions(
     trades,
     prices,
     listPositions(user.id),
   );
   const portById = new Map(portfolios.map((p) => [p.id, p]));
+  // Latest recorded buy or sell per holding. A holding entered only as an opening position has none.
+  const lastTradeDate = new Map<string, string>();
+  for (const t of trades) {
+    const key = `${t.portfolioId}:${t.symbol}`;
+    if (t.date > (lastTradeDate.get(key) ?? "")) lastTradeDate.set(key, t.date);
+  }
+  // Every trade per holding, oldest first, for the history modal.
+  const historyByHolding = new Map<string, HistoryTrade[]>();
+  for (const t of [...trades].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.id - b.id,
+  )) {
+    const key = `${t.portfolioId}:${t.symbol}`;
+    const list = historyByHolding.get(key) ?? [];
+    list.push({
+      id: t.id,
+      date: t.date,
+      side: t.side,
+      quantity: t.quantity,
+      price: t.price,
+      fee: t.fee,
+      covered: skipped.has(t.id),
+    });
+    historyByHolding.set(key, list);
+  }
+  // Dividends per holding, newest first, for the same modal.
+  const dividendsByHolding = new Map<string, HistoryDividend[]>();
+  for (const d of [...listDividends(user.id)].sort((a, b) =>
+    b.paidDate.localeCompare(a.paidDate),
+  )) {
+    const key = `${d.portfolioId}:${d.symbol}`;
+    const list = dividendsByHolding.get(key) ?? [];
+    list.push({
+      id: d.id,
+      paidDate: d.paidDate,
+      shares: d.shares,
+      dps: d.dps,
+      gross: dividendGross(d),
+      tax: dividendTax(d),
+      net: dividendNet(d),
+    });
+    dividendsByHolding.set(key, list);
+  }
   const thb = (portfolioId: number, n: number) => n * fx.rateOf(portfolioId);
 
   const holdings = (
@@ -191,13 +245,14 @@ export default async function HoldingsPage({
                 <th className="num">ต้นทุนรวม</th>
                 <th className="num">มูลค่า</th>
                 <th className="num">กำไร/ขาดทุน</th>
+                <th className="num">ซื้อ-ขายล่าสุด</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {holdings.length === 0 ? (
                 <EmptyRow
-                  cols={9}
+                  cols={10}
                   emoji="🧺"
                   text="ยังไม่มีหุ้น กด “เพิ่มหุ้น” แล้วใส่ตามแอปโบรก"
                 />
@@ -205,11 +260,23 @@ export default async function HoldingsPage({
               {holdings.map((h) => {
                 const ccy = portById.get(h.portfolioId)?.currency ?? "THB";
                 const p = portById.get(h.portfolioId);
+                const holdingKey = `${h.portfolioId}:${h.symbol}`;
                 return (
-                  <tr key={`${h.portfolioId}:${h.symbol}`}>
+                  <tr key={holdingKey}>
                     <td>
                       <span className="flex items-center gap-2">
-                        <span className="font-semibold">{h.symbol}</span>
+                        {historyByHolding.has(holdingKey) ||
+                        dividendsByHolding.has(holdingKey) ? (
+                          <SymbolHistory
+                            symbol={h.symbol}
+                            portfolioName={p?.name ?? ""}
+                            currency={ccy}
+                            trades={historyByHolding.get(holdingKey) ?? []}
+                            dividends={dividendsByHolding.get(holdingKey) ?? []}
+                          />
+                        ) : (
+                          <span className="font-semibold">{h.symbol}</span>
+                        )}
                         <AssetBadge type={h.assetType} />
                       </span>
                     </td>
@@ -254,6 +321,12 @@ export default async function HoldingsPage({
                         </>
                       )}
                     </td>
+                    <td className="num text-muted">
+                      {fmtDate(
+                        lastTradeDate.get(`${h.portfolioId}:${h.symbol}`) ??
+                          null,
+                      )}
+                    </td>
                     <td>
                       <div className="row-actions flex justify-end">
                         <Link
@@ -296,6 +369,7 @@ export default async function HoldingsPage({
                       </span>
                     ) : null}
                   </td>
+                  <td />
                   <td />
                 </tr>
               </tfoot>
