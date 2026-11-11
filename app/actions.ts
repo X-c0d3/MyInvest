@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import { refreshPrices } from "@/lib/prices";
 import {
   CASH_SOURCES,
   CURRENCIES,
@@ -252,4 +253,13 @@ export async function deleteAction(table: DeletableTable, id: number) {
   if (!(table in TABLES)) throw new Error("invalid table");
   deleteRow(user.id, table, id);
   revalidatePath("/", "layout");
+}
+
+/** "🔄 อัปเดตราคา": fetch every holding's latest price now, then return to the holdings view. */
+export async function refreshPricesAction(f: FormData) {
+  const user = await requireUser();
+  await refreshPrices(user.id, { force: true });
+  const back = String(f.get("back") ?? "");
+  revalidatePath("/", "layout");
+  redirect(back.startsWith("/holdings") ? back : "/holdings");
 }

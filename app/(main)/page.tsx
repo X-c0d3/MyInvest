@@ -8,6 +8,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { refreshPrices } from "@/lib/prices";
 import {
   listCashflows,
   listDividends,
@@ -73,6 +74,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const portfolios = listPortfolios(user.id);
   const current = pickPortfolio(portfolios, sp.p);
 
+  // Latest prices from free sources when the stored ones are older than 15 minutes.
+  await refreshPrices(user.id);
   const cashflows = listCashflows(user.id);
   const trades = listTrades(user.id);
   const dividends = listDividends(user.id);

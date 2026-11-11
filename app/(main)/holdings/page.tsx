@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Banknote, Briefcase, Pencil } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { priceFreshness, refreshPrices } from "@/lib/prices";
+import { refreshPricesAction } from "@/app/actions";
 import {
   listCashflows,
   listDividends,
@@ -63,6 +65,8 @@ export default async function HoldingsPage({
   const sp = await searchParams;
   const portfolios = listPortfolios(user.id);
   const current = pickPortfolio(portfolios, sp.p);
+  // Latest prices from free sources when the stored ones are older than 15 minutes.
+  await refreshPrices(user.id);
   const prices = listPrices(user.id);
   const cashflows = listCashflows(user.id);
   const trades = listTrades(user.id);
@@ -116,6 +120,18 @@ export default async function HoldingsPage({
     dividendsByHolding.set(key, list);
   }
   const thb = (portfolioId: number, n: number) => n * fx.rateOf(portfolioId);
+  // Price freshness for the holdings card header.
+  const { lastUpdate: lastPriceUpdate, manual: manualPrice } = priceFreshness(
+    prices,
+    all.map((h) => h.symbol),
+  );
+  const timeFmt = new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   const holdings = (
     current ? all.filter((h) => h.portfolioId === current) : all
@@ -189,6 +205,29 @@ export default async function HoldingsPage({
         title={`${holdings.length} รายการ`}
         icon={<Briefcase className="size-5" />}
         className="mb-4"
+        action={
+          <form
+            action={refreshPricesAction}
+            className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted"
+          >
+            <input type="hidden" name="back" value={listHref} />
+            {manualPrice.length ? (
+              <span title="หาราคาอัตโนมัติไม่ได้ ใช้ราคาที่ใส่เอง (กด ✏️ เพื่อแก้)">
+                ✍️ ราคาใส่เอง: {manualPrice.join(", ")}
+              </span>
+            ) : null}
+            {lastPriceUpdate ? (
+              <span>ราคาล่าสุดอัปเดต {timeFmt.format(lastPriceUpdate)} น.</span>
+            ) : null}
+            <button
+              type="submit"
+              className="btn-ghost px-2.5 py-1 text-xs"
+              title="ดึงราคาล่าสุดเดี๋ยวนี้ (Yahoo Finance / Bitkub · ล่าช้าประมาณ 15 นาที)"
+            >
+              🔄 อัปเดตราคา
+            </button>
+          </form>
+        }
       >
         <MobileList
           empty={
